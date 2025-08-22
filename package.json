@@ -10,6 +10,9 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "ai": "^5.0.19"
+    "@ai-sdk/anthropic": "^2.0.6",
+    "@anthropic-ai/sdk": "^0.60.0",
+    "ai": "^5.0.19",
+    "dotenv": "^17.2.1"
   }
 }

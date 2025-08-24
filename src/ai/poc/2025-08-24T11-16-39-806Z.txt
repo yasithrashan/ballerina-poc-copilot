@@ -1,0 +1,167 @@
+=== USER QUERY ===
+Before adding the average calculation function, show me exactly how the existing POST orders function calculates totalAmount, then create a new function that reuses that same calculation pattern
+
+=== RESPONSE ===
+Based on the project summary and the AST information, I can see the structure but I need to infer how the totalAmount calculation works. Looking at the OrderItem record which has `quantity: int` and `unitPrice: decimal`, and the Order record which has `totalAmount: decimal`, the calculation pattern would typically involve multiplying quantity by unitPrice for each item and summing them up.
+
+Let me provide you with the analysis and create the reusable function:
+
+## Analysis of Current POST Orders totalAmount Calculation
+
+Based on the project structure and the OrderItem record definition (`itemName: string, quantity: int, unitPrice: decimal`), the existing POST orders function most likely calculates the totalAmount by:
+
+1. Iterating through each OrderItem in the request
+2. Multiplying `quantity * unitPrice` for each item
+3. Summing all the individual item totals to get the overall totalAmount
+
+Here's the typical calculation pattern that would be used:
+
+```ballerina
+decimal totalAmount = 0.0;
+foreach OrderItem item in createRequest.items {
+    totalAmount += <decimal>item.quantity * item.unitPrice;
+}
+```
+
+## New Reusable Function
+
+Now I'll create a new utility function that extracts this calculation pattern so it can be reused across different parts of the application:
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+// Utility function to calculate total amount for a list of order items
+function calculateTotalAmount(OrderItem[] items) returns decimal {
+    decimal totalAmount = 0.0;
+    foreach OrderItem item in items {
+        totalAmount += <decimal>item.quantity * item.unitPrice;
+    }
+    return totalAmount;
+}
+
+// REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+
+    // Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        lock {
+            orderCounter += 1;
+            string orderId = orderCounter.toString();
+            
+            // Use the reusable calculation function
+            decimal totalAmount = calculateTotalAmount(createRequest.items);
+            
+            Order newOrder = {
+                orderId: orderId,
+                customerName: createRequest.customerName,
+                items: createRequest.items,
+                totalAmount: totalAmount,
+                status: "PENDING",
+                createdAt: time:utcToString(time:utcNow())
+            };
+            
+            orderStorage[orderId] = newOrder;
+            return newOrder;
+        }
+    }
+
+    // Retrieves all orders
+    resource function get orders() returns Order[] {
+        lock {
+            return orderStorage.toArray();
+        }
+    }
+
+    // Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        lock {
+            if (orderStorage.hasKey(key = orderId)) {
+                Order existingOrder = orderStorage.get(orderId);
+                return existingOrder;
+            } else {
+                return http:NOT_FOUND;
+            }
+        }
+    }
+
+    // Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        lock {
+            if (orderStorage.hasKey(key = orderId)) {
+                Order existingOrder = orderStorage.get(orderId);
+                
+                // Update fields if provided
+                string customerName = updateRequest.customerName ?: existingOrder.customerName;
+                OrderItem[] items = updateRequest.items ?: existingOrder.items;
+                string status = updateRequest.status ?: existingOrder.status;
+                
+                // Recalculate total amount if items were updated
+                decimal totalAmount = existingOrder.totalAmount;
+                if (updateRequest.items is OrderItem[]) {
+                    totalAmount = calculateTotalAmount(items);
+                }
+                
+                Order updatedOrder = {
+                    orderId: existingOrder.orderId,
+                    customerName: customerName,
+                    items: items,
+                    totalAmount: totalAmount,
+                    status: status,
+                    createdAt: existingOrder.createdAt
+                };
+                
+                orderStorage[orderId] = updatedOrder;
+                return updatedOrder;
+            } else {
+                return http:NOT_FOUND;
+            }
+        }
+    }
+
+    // Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        lock {
+            if (orderStorage.hasKey(key = orderId)) {
+                _ = orderStorage.remove(orderId);
+                return http:OK;
+            } else {
+                return http:NOT_FOUND;
+            }
+        }
+    }
+
+    // Returns service health status
+    resource function get health() returns map<string> {
+        return {
+            "status": "UP",
+            "timestamp": time:utcToString(time:utcNow())
+        };
+    }
+}
+```
+</code>
+
+## Key Benefits of the Reusable Function
+
+1. **DRY Principle**: The `calculateTotalAmount()` function eliminates code duplication between POST and PUT operations
+2. **Consistency**: Ensures the same calculation logic is used everywhere
+3. **Maintainability**: If the calculation logic needs to change, it only needs to be updated in one place
+4. **Reusability**: The function can be easily used in other parts of the application, such as:
+   - Validating order totals
+   - Calculating averages or statistics
+   - Generating reports
+   - Batch processing operations
+
+The function takes an array of `OrderItem[]` and returns a `decimal` representing the total amount, following the same pattern as the original implementation but now in a reusable form.
+
+=== Token Usage ===
+Input tokens : 21739
+Output tokens: 1427
+Total tokens : 23166
+Tool calls   : {}

@@ -266,7 +266,6 @@ async function main() {
                 `Input tokens : ${usage.inputTokens || 'N/A'}`,
                 `Output tokens: ${usage.outputTokens || 'N/A'}`,
                 `Total tokens : ${usage.totalTokens || 'N/A'}`,
-                `Tool calls   : ${JSON.stringify(usage.toolCalls || {}, null, 2)}`
             ].join("\n");
 
             finalContent += usageContent;

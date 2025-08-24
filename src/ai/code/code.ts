@@ -111,7 +111,7 @@ const queryAST = tool({
             }
         }
 
-        console.log("[QueryAST] Matched 🌀 nodes:", matchedNodes.map(n => n.name));
+        console.log("[QueryAST] Matched nodes:", matchedNodes.map(n => n.name));
         return { matchedNodes };
     }
 });
@@ -239,7 +239,13 @@ Example Codeblock segment:
 
 async function main() {
     try {
-        const userQuery = "Before adding the average calculation function, show me exactly how the existing POST orders function calculates totalAmount, then create a new function that reuses that same calculation pattern"
+        const userQuery = process.env.USER_QUERY;
+
+        if (!userQuery || !userQuery.trim()) {
+            console.error("[ERROR] USER_QUERY environment variable is not set or empty.");
+            process.exit(1);
+        }
+
         const { text: response, usage } = await generateBallerinaCode(userQuery, [API_DOC]);
 
         const outputDir = path.join(process.cwd(), "src", "ai", "poc");
@@ -251,20 +257,23 @@ async function main() {
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        let finalContent = response;
+        // Include user query at the top of the output file
+        let finalContent = `=== USER QUERY ===\n${userQuery}\n\n=== RESPONSE ===\n${response}`;
+
         if (usage) {
             const usageContent = [
                 "\n\n=== Token Usage ===",
-                `Input tokens : ${usage.inputTokens}`,
-                `Output tokens: ${usage.outputTokens}`,
-                `Total tokens : ${usage.totalTokens}`
+                `Input tokens : ${usage.inputTokens || 'N/A'}`,
+                `Output tokens: ${usage.outputTokens || 'N/A'}`,
+                `Total tokens : ${usage.totalTokens || 'N/A'}`,
+                `Tool calls   : ${JSON.stringify(usage.toolCalls || {}, null, 2)}`
             ].join("\n");
 
             finalContent += usageContent;
         }
 
         fs.writeFileSync(outputPath, finalContent, "utf-8");
-        console.log(`\n Output with token usage saved to ${outputPath}\n`);
+        console.log(`\nOutput with token usage saved to ${outputPath}\n`);
 
         console.log("Generated Response:");
         console.log("=".repeat(80));
@@ -274,7 +283,6 @@ async function main() {
         console.error("Error generating Ballerina code:", error);
     }
 }
-
 
 main();
 

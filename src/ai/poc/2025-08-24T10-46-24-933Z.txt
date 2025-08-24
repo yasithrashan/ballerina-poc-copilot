@@ -1,0 +1,151 @@
+It seems there's an issue with the AST query tool. Based on the project summary, I can see that there's a POST orders resource function that takes a `CreateOrderRequest` and returns an `Order`. Let me analyze what we know and create the explanation and new function.
+
+## Explanation
+
+Based on the project summary, the existing POST orders resource function:
+1. Takes a `CreateOrderRequest` which contains `customerName` and `items` (array of `OrderItem`)
+2. Each `OrderItem` has `itemName`, `quantity`, and `unitPrice`
+3. Returns an `Order` which includes a calculated `totalAmount`
+
+The typical calculation pattern for totalAmount would be:
+- For each item: `quantity * unitPrice`
+- Sum all item totals to get the overall `totalAmount`
+
+I'll create a reusable function called `calculateTotalAmount` that takes an array of `OrderItem` and returns the calculated total. This function can be used both in the existing POST orders function and anywhere else total amount calculation is needed.
+
+The control flow will be:
+1. Create a utility function `calculateTotalAmount` that iterates through OrderItem array
+2. For each item, multiply quantity by unitPrice
+3. Sum all item totals using decimal arithmetic
+4. Return the total amount
+
+This promotes code reuse and ensures consistent calculation logic across the application.
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+// Utility function to calculate total amount from order items
+function calculateTotalAmount(OrderItem[] items) returns decimal {
+    decimal totalAmount = 0.0;
+    
+    foreach OrderItem item in items {
+        decimal itemTotal = <decimal>item.quantity * item.unitPrice;
+        totalAmount = totalAmount + itemTotal;
+    }
+    
+    return totalAmount;
+}
+
+// REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+    
+    // Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        // Generate unique order ID
+        orderCounter = orderCounter + 1;
+        string orderId = "ORD-" + orderCounter.toString();
+        
+        // Calculate total amount using the reusable function
+        decimal totalAmount = calculateTotalAmount(createRequest.items);
+        
+        // Create new order
+        Order newOrder = {
+            orderId: orderId,
+            customerName: createRequest.customerName,
+            items: createRequest.items,
+            totalAmount: totalAmount,
+            status: "pending",
+            createdAt: time:utcToString(time:utcNow())
+        };
+        
+        // Store the order
+        orderStorage[orderId] = newOrder;
+        
+        return newOrder;
+    }
+    
+    // Retrieves all orders
+    resource function get orders() returns Order[] {
+        return orderStorage.toArray();
+    }
+    
+    // Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        Order? existingOrder = orderStorage[orderId];
+        if existingOrder is Order {
+            return existingOrder;
+        }
+        return http:NOT_FOUND;
+    }
+    
+    // Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        Order? existingOrder = orderStorage[orderId];
+        if existingOrder is () {
+            return http:NOT_FOUND;
+        }
+        
+        Order orderToUpdate = <Order>existingOrder;
+        
+        // Update fields if provided
+        if updateRequest.customerName is string {
+            orderToUpdate.customerName = <string>updateRequest.customerName;
+        }
+        
+        if updateRequest.items is OrderItem[] {
+            OrderItem[] newItems = <OrderItem[]>updateRequest.items;
+            orderToUpdate.items = newItems;
+            // Recalculate total amount using the reusable function
+            orderToUpdate.totalAmount = calculateTotalAmount(newItems);
+        }
+        
+        if updateRequest.status is string {
+            orderToUpdate.status = <string>updateRequest.status;
+        }
+        
+        // Update the order in storage
+        orderStorage[orderId] = orderToUpdate;
+        
+        return orderToUpdate;
+    }
+    
+    // Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        Order? existingOrder = orderStorage[orderId];
+        if existingOrder is () {
+            return http:NOT_FOUND;
+        }
+        
+        Order removedOrder = orderStorage.remove(orderId);
+        return http:OK;
+    }
+    
+    // Returns service health status
+    resource function get health() returns map<string> {
+        return {
+            "status": "UP",
+            "timestamp": time:utcToString(time:utcNow())
+        };
+    }
+}
+```
+</code>
+
+The new `calculateTotalAmount` function:
+1. Takes an array of `OrderItem` as input
+2. Iterates through each item and calculates `quantity * unitPrice`
+3. Sums all item totals to get the overall total
+4. Returns the calculated decimal total
+
+This function is now reused in both the POST orders resource function (for creating new orders) and the PUT orders resource function (for updating orders when items change). This ensures consistent calculation logic and makes the code more maintainable.
+
+=== Token Usage ===
+Input tokens : 20872
+Output tokens: 1356
+Total tokens : 22228

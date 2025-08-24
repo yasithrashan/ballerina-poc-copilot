@@ -1,0 +1,152 @@
+I'll proceed with adding the new resource function based on the project summary provided. Let me analyze the requirements:
+
+## Explanation
+
+Based on the project summary, I need to add a new resource function to calculate the average order value. The control flow will be:
+
+1. **Selected Libraries**: I'll use the existing `ballerina/http` import for HTTP responses and basic Ballerina operations for calculations
+2. **Function Logic**: 
+   - Access the existing `orderStorage` map that contains all orders
+   - Iterate through all orders to sum up their `totalAmount` values
+   - Calculate the average by dividing total sum by the number of orders
+   - Handle edge case when no orders exist (return 0.0)
+   - Return the average as a JSON response
+
+3. **Resource Function Design**: 
+   - HTTP GET method at `/orders/average` endpoint
+   - Returns a JSON object containing the average order value
+   - Uses existing `Order` type from types.bal which has `totalAmount: decimal` field
+
+4. **Data Flow**:
+   - Extract all orders from `orderStorage` map
+   - Sum all `totalAmount` values using a foreach loop
+   - Calculate average and return in a structured response
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+# REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+
+    # Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        orderCounter += 1;
+        string orderId = orderCounter.toString();
+        
+        decimal totalAmount = 0.0;
+        foreach OrderItem item in createRequest.items {
+            totalAmount += item.quantity * item.unitPrice;
+        }
+        
+        Order newOrder = {
+            orderId: orderId,
+            customerName: createRequest.customerName,
+            items: createRequest.items,
+            totalAmount: totalAmount,
+            status: "pending",
+            createdAt: time:utcToString(time:utcNow())
+        };
+        
+        orderStorage[orderId] = newOrder;
+        return newOrder;
+    }
+
+    # Retrieves all orders
+    resource function get orders() returns Order[] {
+        return orderStorage.toArray();
+    }
+
+    # Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        if orderStorage.hasKey(orderId) {
+            Order retrievedOrder = orderStorage.get(orderId);
+            return retrievedOrder;
+        }
+        return http:NOT_FOUND;
+    }
+
+    # Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        if !orderStorage.hasKey(orderId) {
+            return http:NOT_FOUND;
+        }
+        
+        Order existingOrder = orderStorage.get(orderId);
+        
+        string customerName = updateRequest.customerName ?: existingOrder.customerName;
+        OrderItem[] items = updateRequest.items ?: existingOrder.items;
+        string status = updateRequest.status ?: existingOrder.status;
+        
+        decimal totalAmount = 0.0;
+        foreach OrderItem item in items {
+            totalAmount += item.quantity * item.unitPrice;
+        }
+        
+        Order updatedOrder = {
+            orderId: orderId,
+            customerName: customerName,
+            items: items,
+            totalAmount: totalAmount,
+            status: status,
+            createdAt: existingOrder.createdAt
+        };
+        
+        orderStorage[orderId] = updatedOrder;
+        return updatedOrder;
+    }
+
+    # Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        if orderStorage.hasKey(orderId) {
+            Order removedOrder = orderStorage.remove(orderId);
+            return http:OK;
+        }
+        return http:NOT_FOUND;
+    }
+
+    # Calculates and returns the average order value
+    resource function get orders/average() returns map<decimal> {
+        Order[] allOrders = orderStorage.toArray();
+        int orderCount = allOrders.length();
+        
+        if orderCount == 0 {
+            return {"averageOrderValue": 0.0d};
+        }
+        
+        decimal totalSum = 0.0d;
+        foreach Order orderItem in allOrders {
+            totalSum += orderItem.totalAmount;
+        }
+        
+        decimal averageValue = totalSum / <decimal>orderCount;
+        return {"averageOrderValue": averageValue};
+    }
+
+    # Returns service health status
+    resource function get health() returns map<string> {
+        return {"status": "UP", "service": "Order Management API"};
+    }
+}
+```
+</code>
+
+The new resource function `get orders/average()` has been added to calculate the average order value. It:
+
+1. Retrieves all orders from the existing `orderStorage` map
+2. Handles the edge case when no orders exist by returning 0.0
+3. Sums up all order total amounts using a foreach loop
+4. Calculates the average by dividing the total sum by the number of orders
+5. Returns the result as a JSON object with the key "averageOrderValue"
+
+The function can be accessed via GET request to `/api/orders/average` and will return the current average order value based on all orders in the storage.
+
+=== Token Usage ===
+Input tokens : 20663
+Output tokens: 1356
+Total tokens : 22019

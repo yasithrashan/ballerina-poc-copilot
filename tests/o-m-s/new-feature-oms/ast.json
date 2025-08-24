@@ -1,0 +1,134 @@
+{
+  "codebase": {
+    "name": "Ballerina Order Management Service",
+    "description": "Ballerina service providing order management CRUD operations with type definitions",
+    "files": [
+      {
+        "fileName": "main.bal",
+        "path": "tests/o-m-s/new-feature-oms/main.bal",
+        "type": "module",
+        "lineCount": 138,
+        "ast": {
+          "imports": [
+            { "source": "ballerina/http", "imports": [] },
+            { "source": "ballerina/time", "imports": [] }
+          ],
+          "exports": [],
+          "statements": [
+            {
+              "type": "globalVar",
+              "name": "orderStorage",
+              "varType": "map<Order>"
+            },
+            { "type": "globalVar", "name": "orderCounter", "varType": "int" },
+            {
+              "type": "service",
+              "name": "/api",
+              "listener": "http:Listener(8080)",
+              "resources": [
+                {
+                  "name": "orders",
+                  "method": "post",
+                  "parameters": [
+                    { "name": "createRequest", "type": "CreateOrderRequest" }
+                  ],
+                  "returnType": "Order|ErrorResponse|error"
+                },
+                {
+                  "name": "orders",
+                  "method": "get",
+                  "parameters": [],
+                  "returnType": "Order[]"
+                },
+                {
+                  "name": "orders/[string orderId]",
+                  "method": "get",
+                  "parameters": [{ "name": "orderId", "type": "string" }],
+                  "returnType": "Order|ErrorResponse|http:NotFound"
+                },
+                {
+                  "name": "orders/[string orderId]",
+                  "method": "put",
+                  "parameters": [
+                    { "name": "orderId", "type": "string" },
+                    { "name": "updateRequest", "type": "UpdateOrderRequest" }
+                  ],
+                  "returnType": "Order|ErrorResponse|http:NotFound"
+                },
+                {
+                  "name": "orders/[string orderId]",
+                  "method": "delete",
+                  "parameters": [{ "name": "orderId", "type": "string" }],
+                  "returnType": "http:Ok|http:NotFound"
+                },
+                {
+                  "name": "health",
+                  "method": "get",
+                  "parameters": [],
+                  "returnType": "map<string>"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "fileName": "types.bal",
+        "path": "tests/o-m-s/new-feature-oms/types.bal",
+        "type": "module",
+        "lineCount": 42,
+        "ast": {
+          "imports": [],
+          "exports": [
+            {
+              "name": "OrderItem",
+              "type": "record",
+              "properties": [
+                { "name": "itemName", "type": "string" },
+                { "name": "quantity", "type": "int" },
+                { "name": "unitPrice", "type": "decimal" }
+              ]
+            },
+            {
+              "name": "Order",
+              "type": "record",
+              "properties": [
+                { "name": "orderId", "type": "string" },
+                { "name": "customerName", "type": "string" },
+                { "name": "items", "type": "OrderItem[]" },
+                { "name": "totalAmount", "type": "decimal" },
+                { "name": "status", "type": "string" },
+                { "name": "createdAt", "type": "string" }
+              ]
+            },
+            {
+              "name": "CreateOrderRequest",
+              "type": "record",
+              "properties": [
+                { "name": "customerName", "type": "string" },
+                { "name": "items", "type": "OrderItem[]" }
+              ]
+            },
+            {
+              "name": "UpdateOrderRequest",
+              "type": "record",
+              "properties": [
+                { "name": "customerName", "type": "string?" },
+                { "name": "items", "type": "OrderItem[]?" },
+                { "name": "status", "type": "string?" }
+              ]
+            },
+            {
+              "name": "ErrorResponse",
+              "type": "record",
+              "properties": [
+                { "name": "message", "type": "string" },
+                { "name": "'error", "type": "string" }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

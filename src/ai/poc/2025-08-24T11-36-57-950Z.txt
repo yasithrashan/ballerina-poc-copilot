@@ -1,0 +1,172 @@
+=== USER QUERY ===
+Add a POST /orders/{orderId}/cancel endpoint to mark an order as "CANCELLED" without deleting it.
+
+=== RESPONSE ===
+Based on the project summary, I can see the current structure has a REST service with order management endpoints. I'll add a new POST endpoint to cancel orders by marking them as "CANCELLED".
+
+## Explanation
+
+I'll add a new POST endpoint `/orders/{orderId}/cancel` that will:
+
+1. **Control Flow**:
+   - Accept the `orderId` as a path parameter
+   - Check if the order exists in the `orderStorage` map
+   - If the order exists, update its status to "CANCELLED" 
+   - Return the updated order or appropriate error responses
+
+2. **Libraries Used**:
+   - **ballerina/http**: For HTTP service functionality, status codes, and response types
+   - **ballerina/time**: For timestamp handling (already imported)
+
+3. **Function Implementation**:
+   - Use `map:hasKey()` to check if the order exists
+   - Use `map:get()` to retrieve the existing order
+   - Update the order's status field to "CANCELLED"
+   - Store the updated order back in the map
+   - Return appropriate HTTP responses based on the operation result
+
+4. **Error Handling**:
+   - Return `http:NotFound` if the order doesn't exist
+   - Use the existing `ErrorResponse` type for consistent error messaging
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+// REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+
+    // Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        orderCounter += 1;
+        string orderId = orderCounter.toString();
+        
+        // Calculate total amount
+        decimal totalAmount = 0;
+        foreach OrderItem item in createRequest.items {
+            totalAmount += item.quantity * item.unitPrice;
+        }
+        
+        Order newOrder = {
+            orderId: orderId,
+            customerName: createRequest.customerName,
+            items: createRequest.items,
+            totalAmount: totalAmount,
+            status: "PENDING",
+            createdAt: time:utcToString(time:utcNow())
+        };
+        
+        orderStorage[orderId] = newOrder;
+        return newOrder;
+    }
+
+    // Retrieves all orders
+    resource function get orders() returns Order[] {
+        return orderStorage.toArray();
+    }
+
+    // Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        if orderStorage.hasKey(orderId) {
+            return orderStorage.get(orderId);
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        if !orderStorage.hasKey(orderId) {
+            return http:NOT_FOUND;
+        }
+        
+        Order existingOrder = orderStorage.get(orderId);
+        
+        // Update fields if provided
+        string customerName = updateRequest.customerName ?: existingOrder.customerName;
+        OrderItem[] items = updateRequest.items ?: existingOrder.items;
+        string status = updateRequest.status ?: existingOrder.status;
+        
+        // Recalculate total if items changed
+        decimal totalAmount = existingOrder.totalAmount;
+        if updateRequest.items is OrderItem[] {
+            totalAmount = 0;
+            foreach OrderItem item in items {
+                totalAmount += item.quantity * item.unitPrice;
+            }
+        }
+        
+        Order updatedOrder = {
+            orderId: orderId,
+            customerName: customerName,
+            items: items,
+            totalAmount: totalAmount,
+            status: status,
+            createdAt: existingOrder.createdAt
+        };
+        
+        orderStorage[orderId] = updatedOrder;
+        return updatedOrder;
+    }
+
+    // Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        if orderStorage.hasKey(orderId) {
+            _ = orderStorage.remove(orderId);
+            return http:OK;
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Cancels an order by marking it as CANCELLED
+    resource function post orders/[string orderId]/cancel() returns Order|ErrorResponse|http:NotFound {
+        if !orderStorage.hasKey(orderId) {
+            return http:NOT_FOUND;
+        }
+        
+        Order existingOrder = orderStorage.get(orderId);
+        
+        // Create updated order with CANCELLED status
+        Order cancelledOrder = {
+            orderId: existingOrder.orderId,
+            customerName: existingOrder.customerName,
+            items: existingOrder.items,
+            totalAmount: existingOrder.totalAmount,
+            status: "CANCELLED",
+            createdAt: existingOrder.createdAt
+        };
+        
+        orderStorage[orderId] = cancelledOrder;
+        return cancelledOrder;
+    }
+
+    // Returns service health status
+    resource function get health() returns map<string> {
+        return {
+            "status": "UP",
+            "service": "Order Management API"
+        };
+    }
+}
+```
+</code>
+
+The new POST `/orders/{orderId}/cancel` endpoint:
+
+1. **Accepts** the `orderId` as a path parameter
+2. **Checks** if the order exists using `orderStorage.hasKey()`
+3. **Retrieves** the existing order using `orderStorage.get()`
+4. **Creates** a new order object with all existing fields but updates the status to "CANCELLED"
+5. **Stores** the updated order back in the map
+6. **Returns** the cancelled order or `http:NOT_FOUND` if the order doesn't exist
+
+This approach preserves all order data while simply changing the status, making it easy to track cancelled orders for reporting or audit purposes.
+
+=== Token Usage ===
+Input tokens : 21189
+Output tokens: 1472
+Total tokens : 22661

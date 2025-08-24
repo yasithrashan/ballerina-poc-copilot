@@ -1,5 +1,5 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_SONNET_4, getAnthropicClinet } from "../connection";
+import { ANTHROPIC_HAIKU, ANTHROPIC_SONNET_4, getAnthropicClinet } from "../connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from 'fs';
 import type { Library } from "../libs/types";
@@ -11,8 +11,15 @@ import * as dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
-const jsonPath: string = 'src/ai/api-docs/order-management-api-docs.json';
-const API_DOC = JSON.parse(fs.readFileSync(jsonPath, 'utf-8')) as Library;
+const jsonPath = process.env.API_DOC_JSON;
+if (!jsonPath) {
+  throw new Error("Missing environment variable: API_DOC_JSON");
+}
+
+const API_DOC = JSON.parse(
+  fs.readFileSync(jsonPath, "utf-8")
+) as Library;
+
 const LANG_LIB = LANGLIBS as Library[];
 
 // Load bal.md file from environment variable
@@ -59,15 +66,13 @@ async function generateBallerinaCode(userQuery: string, API_DOC: Library[]): Pro
 
 const queryAST = tool({
     name: 'QueryAST',
-    description: 'Extract AST nodes for specified Ballerina symbols such as functions, types, imports, exports, and variables.',
+    description: 'Fetch full AST nodes for Ballerina symbols and return their content for LLM code generation.',
     inputSchema: z.object({
         symbols: z
             .array(z.string())
-            .describe('Array of Ballerina code symbols (functions, types, imports, exports, variables, etc.) identified as relevant by the LLM for the user query.'),
+            .describe('Array of Ballerina symbols (functions, types, clients, imports, exports, variables) to fetch from the AST.'),
     }),
     execute: async ({ symbols }) => {
-        console.log("[QueryAST] Called with symbols:", symbols);
-
         const astPath = process.env.AST_JSON_PATH;
         if (!astPath) {
             return { error: 'AST_JSON_PATH environment variable is not set' };
@@ -78,23 +83,25 @@ const queryAST = tool({
         }
 
         const astContent = JSON.parse(fs.readFileSync(astPath, 'utf-8'));
-        const matchedNodes: any[] = [];
+        const matchedNodes: Record<string, any>[] = [];
 
-        // Helper function to recursively match nodes
         function matchNode(node: any) {
             if (!node) return;
 
-            // Check node name
             if (node.name) {
                 for (const symbol of symbols) {
-                    if (node.name.includes(symbol)) {
-                        matchedNodes.push(node);
+                    if (node.name === symbol || node.name.includes(symbol)) {
+                        // Return full node content
+                        matchedNodes.push({
+                            symbol,
+                            nodeContent: node
+                        });
                     }
                 }
             }
 
-            // Check nested arrays
-            const nestedKeys = ['statements', 'resources', 'exports', 'imports'];
+            // Recursively check nested arrays
+            const nestedKeys = ['statements', 'resources', 'exports', 'imports', 'parameters', 'properties'];
             for (const key of nestedKeys) {
                 if (node[key] && Array.isArray(node[key])) {
                     node[key].forEach((child: any) => matchNode(child));
@@ -102,19 +109,20 @@ const queryAST = tool({
             }
         }
 
-        // Traverse all files in the codebase
-        if (astContent.codebase && astContent.codebase.files) {
+        // Traverse all files
+        if (astContent.codebase?.files) {
             for (const file of astContent.codebase.files) {
-                if (file.ast) {
-                    matchNode(file.ast);
-                }
+                if (file.ast) matchNode(file.ast);
             }
         }
 
-        console.log("[QueryAST] Matched nodes:", matchedNodes.map(n => n.name));
+        // Return matched nodes with full content
+        console.log("TOOL CALLED......")
+        console.log(matchedNodes);
         return { matchedNodes };
     }
 });
+
 
 function getSystemPromptBalMd(balMdContent: string): string {
     return `
@@ -160,7 +168,7 @@ If the query requires code, follow these steps to generate the Ballerina code:
     - Do NOT generate any existing function or type code from imagination.
     - First, identify the relevant symbols from the project summary (bal.md).
     - Then, use the QueryAST tool to fetch the exact code for those symbols.
-    - Only after fetching the real code, use it for analysis, modification, or reuse.
+    - Only after fetching the real code, use it for better undestand the code.
 
 
 3. Carefully analyze the provided API documentation:
@@ -223,10 +231,10 @@ Important reminders:
 - For GraphQL service related queries, If the user haven't specified their own GraphQL Schema, Write the proposed GraphQL schema for the user query right after explanation before generating the ballerina code. Use same names as the GraphQL Schema when defining record types.
 
 Begin your response with the explanation, once the entire explanation is finished only, include codeblock segments(if any) in the end of the response.
-The explanation should explain the control flow decided in step 4, along with the selected libraries and their functions.
+The explanation should explain the control flow along with the selected libraries and their functions.
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
-The codeblock segments should only have .bal contents and it should not generate or modify any other file types. Politely decline if the query requests for such cases.
+
 
 Example Codeblock segment:
 <code filename="main.bal">
@@ -274,10 +282,6 @@ async function main() {
         fs.writeFileSync(outputPath, finalContent, "utf-8");
         console.log(`\nOutput with token usage saved to ${outputPath}\n`);
 
-        console.log("Generated Response:");
-        console.log("=".repeat(80));
-        console.log(finalContent);
-        console.log("=".repeat(80));
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }

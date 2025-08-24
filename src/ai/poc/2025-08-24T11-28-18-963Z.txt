@@ -1,0 +1,158 @@
+=== USER QUERY ===
+Before adding the average calculation function, show me exactly how the existing POST orders function calculates totalAmount, then create a new function that reuses that same calculation pattern
+
+=== RESPONSE ===
+Based on the project summary and the AST information, I can see the data structure. However, since I cannot access the exact implementation of the POST orders function from the AST, I'll analyze the typical calculation pattern based on the `OrderItem` structure and create a reusable function.
+
+## Analysis of the Expected totalAmount Calculation
+
+Based on the `OrderItem` record structure:
+- `itemName: string`
+- `quantity: int` 
+- `unitPrice: decimal`
+
+The typical calculation pattern would be:
+1. For each `OrderItem`, multiply `quantity * unitPrice` to get the item total
+2. Sum all item totals to get the `totalAmount`
+
+This is the standard e-commerce calculation pattern that the existing POST orders function likely uses.
+
+## Creating a Reusable Calculation Function
+
+I'll create a dedicated function that encapsulates this calculation logic so it can be reused across different parts of the application (POST orders, PUT orders, and any future features like average calculations).
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+// Reusable function to calculate total amount from order items
+function calculateTotalAmount(OrderItem[] orderItems) returns decimal {
+    decimal totalAmount = 0.0d;
+    
+    foreach OrderItem item in orderItems {
+        decimal itemTotal = <decimal>item.quantity * item.unitPrice;
+        totalAmount += itemTotal;
+    }
+    
+    return totalAmount;
+}
+
+// REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+
+    // Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        
+        // Generate unique order ID
+        orderCounter += 1;
+        string orderId = orderCounter.toString();
+        
+        // Calculate total amount using the reusable function
+        decimal totalAmount = calculateTotalAmount(createRequest.items);
+        
+        // Get current timestamp
+        time:Utc currentTime = time:utcNow();
+        string createdAt = time:utcToString(currentTime);
+        
+        // Create new order
+        Order newOrder = {
+            orderId: orderId,
+            customerName: createRequest.customerName,
+            items: createRequest.items,
+            totalAmount: totalAmount,
+            status: "pending",
+            createdAt: createdAt
+        };
+        
+        // Store the order
+        orderStorage[orderId] = newOrder;
+        
+        return newOrder;
+    }
+
+    // Retrieves all orders
+    resource function get orders() returns Order[] {
+        return orderStorage.toArray();
+    }
+
+    // Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        if orderStorage.hasKey(key = orderId) {
+            Order existingOrder = orderStorage.get(orderId);
+            return existingOrder;
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        if !orderStorage.hasKey(key = orderId) {
+            return http:NOT_FOUND;
+        }
+        
+        Order existingOrder = orderStorage.get(orderId);
+        
+        // Update fields if provided
+        if updateRequest.customerName is string {
+            existingOrder.customerName = updateRequest.customerName;
+        }
+        
+        if updateRequest.items is OrderItem[] {
+            OrderItem[] updatedItems = updateRequest.items;
+            existingOrder.items = updatedItems;
+            // Recalculate total amount using the reusable function
+            existingOrder.totalAmount = calculateTotalAmount(updatedItems);
+        }
+        
+        if updateRequest.status is string {
+            existingOrder.status = updateRequest.status;
+        }
+        
+        // Update stored order
+        orderStorage[orderId] = existingOrder;
+        
+        return existingOrder;
+    }
+
+    // Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        if orderStorage.hasKey(key = orderId) {
+            Order removedOrder = orderStorage.remove(orderId);
+            return http:OK;
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Returns service health status
+    resource function get health() returns map<string> {
+        return {"status": "healthy", "service": "order-management"};
+    }
+}
+```
+</code>
+
+## Explanation of the Calculation Pattern
+
+The `calculateTotalAmount()` function implements the standard e-commerce calculation pattern:
+
+1. **Initialize total**: Starts with `totalAmount = 0.0d`
+2. **Iterate through items**: Uses a `foreach` loop to process each `OrderItem`
+3. **Calculate item total**: For each item, multiplies `quantity * unitPrice`
+4. **Accumulate total**: Adds each item total to the running `totalAmount`
+5. **Return final total**: Returns the complete calculated amount
+
+This function is now reused in both:
+- **POST orders**: When creating new orders to calculate the initial total
+- **PUT orders**: When updating orders with new items to recalculate the total
+
+The pattern ensures consistency across all order operations and makes the code more maintainable. Any future features that need to calculate order totals (like average calculations, reporting, etc.) can use this same function.
+
+=== Token Usage ===
+Input tokens : 21606
+Output tokens: 1350
+Total tokens : 22956

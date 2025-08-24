@@ -1,0 +1,76 @@
+=== USER QUERY ===
+when creating a new order add user email as a for new feature
+
+=== RESPONSE ===
+Based on the information we have, we need to:
+
+1. Modify the `Order` record to include an `email` field
+2. Update the `CreateOrderRequest` record to include an `email` field
+3. Update the order creation logic to use the provided email
+
+Let's implement these changes:
+
+### Explanation:
+
+To add email functionality to the order creation process, I'm making the following changes:
+
+1. **Updating Type Definitions (`types.bal`)**:
+   - Adding an `email` field of type string to the `Order` record
+   - Adding an `email` field of type string to the `CreateOrderRequest` record
+   - This ensures we can capture and store the user's email during order creation
+
+2. **These changes will affect the order creation logic in the API service**:
+   - When a new order is created, the email field from the request will be included in the order record
+   - This doesn't require changes to the logic itself if the order creation simply copies fields from the request
+
+3. **No database schema changes are required** since the project is using an in-memory map for storage.
+
+The implementation ensures that all new orders will include the customer's email address, which can be used for future features like order confirmations or notifications.
+
+<code filename="types.bal">
+```ballerina
+// Record representing an item in an order
+type OrderItem record {
+    string itemName;
+    int quantity;
+    decimal unitPrice;
+};
+
+// Record representing an order
+type Order record {
+    string orderId;
+    string customerName;
+    string email;
+    OrderItem[] items;
+    decimal totalAmount;
+    string status;
+    string createdAt;
+};
+
+// Request payload for creating a new order
+type CreateOrderRequest record {
+    string customerName;
+    string email;
+    OrderItem[] items;
+};
+
+// Request payload for updating an existing order
+type UpdateOrderRequest record {
+    string? customerName = ();
+    string? email = ();
+    OrderItem[]? items = ();
+    string? status = ();
+};
+
+// Error response format
+type ErrorResponse record {
+    string message;
+    string 'error;
+};
+```
+</code>
+
+=== Token Usage ===
+Input tokens : 21355
+Output tokens: 504
+Total tokens : 21859

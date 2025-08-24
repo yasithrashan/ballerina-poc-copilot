@@ -1,0 +1,183 @@
+=== USER QUERY ===
+when creating a new order add user email as a for new feature
+
+=== RESPONSE ===
+Based on the existing code structure, I'll add the user email field to support the new feature. Here's my plan:
+
+## Explanation
+
+To add user email as a new field for order creation, I need to modify the following:
+
+1. **Update the `CreateOrderRequest` record** in `types.bal` to include an `email` field
+2. **Update the `Order` record** in `types.bal` to store the customer email
+3. **Update the `UpdateOrderRequest` record** to optionally allow email updates
+4. **Modify the order creation logic** in the POST `/orders` resource function to handle the new email field
+
+The control flow remains the same - when a POST request is made to create an order, the service will now capture and store the customer's email along with other order details. The email will be part of the request payload and will be stored in the Order record for future reference.
+
+<code filename="types.bal">
+```ballerina
+// Order item details
+public type OrderItem record {
+    string itemName;
+    int quantity;
+    decimal unitPrice;
+};
+
+// Complete order information
+public type Order record {
+    string orderId;
+    string customerName;
+    string email; // New field for customer email
+    OrderItem[] items;
+    decimal totalAmount;
+    string status;
+    string createdAt;
+};
+
+// Request payload for creating new orders
+public type CreateOrderRequest record {
+    string customerName;
+    string email; // New field for customer email
+    OrderItem[] items;
+};
+
+// Request payload for updating existing orders
+public type UpdateOrderRequest record {
+    string? customerName;
+    string? email; // New field for updating customer email
+    OrderItem[]? items;
+    string? status;
+};
+
+// Error response structure
+public type ErrorResponse record {
+    string message;
+    string 'error;
+};
+```
+</code>
+
+<code filename="main.bal">
+```ballerina
+import ballerina/http;
+import ballerina/time;
+
+// In-memory storage for orders
+map<Order> orderStorage = {};
+int orderCounter = 1000;
+
+// REST service with endpoints for order management and health check
+service /api on new http:Listener(8080) {
+
+    // Creates a new order
+    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
+        orderCounter += 1;
+        string orderId = orderCounter.toString();
+        
+        // Calculate total amount
+        decimal totalAmount = 0.0;
+        foreach OrderItem item in createRequest.items {
+            totalAmount += item.quantity * item.unitPrice;
+        }
+        
+        // Create new order with email field
+        Order newOrder = {
+            orderId: orderId,
+            customerName: createRequest.customerName,
+            email: createRequest.email, // Include email in the new order
+            items: createRequest.items,
+            totalAmount: totalAmount,
+            status: "pending",
+            createdAt: time:utcToString(time:utcNow())
+        };
+        
+        orderStorage[orderId] = newOrder;
+        return newOrder;
+    }
+
+    // Retrieves all orders
+    resource function get orders() returns Order[] {
+        return orderStorage.toArray();
+    }
+
+    // Retrieves an order by ID
+    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
+        if orderStorage.hasKey(key = orderId) {
+            Order orderDetails = orderStorage.get(orderId);
+            return orderDetails;
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Updates an existing order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
+        if !orderStorage.hasKey(key = orderId) {
+            return http:NOT_FOUND;
+        }
+        
+        Order existingOrder = orderStorage.get(orderId);
+        
+        // Update fields if provided
+        if updateRequest.customerName is string {
+            existingOrder.customerName = updateRequest.customerName;
+        }
+        
+        // Update email if provided
+        if updateRequest.email is string {
+            existingOrder.email = updateRequest.email;
+        }
+        
+        if updateRequest.items is OrderItem[] {
+            existingOrder.items = updateRequest.items;
+            
+            // Recalculate total amount
+            decimal totalAmount = 0.0;
+            foreach OrderItem item in existingOrder.items {
+                totalAmount += item.quantity * item.unitPrice;
+            }
+            existingOrder.totalAmount = totalAmount;
+        }
+        
+        if updateRequest.status is string {
+            existingOrder.status = updateRequest.status;
+        }
+        
+        orderStorage[orderId] = existingOrder;
+        return existingOrder;
+    }
+
+    // Deletes an order by ID
+    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
+        if orderStorage.hasKey(key = orderId) {
+            Order removedOrder = orderStorage.remove(orderId);
+            return http:OK;
+        }
+        return http:NOT_FOUND;
+    }
+
+    // Returns service health status
+    resource function get health() returns map<string> {
+        return {
+            "status": "healthy",
+            "timestamp": time:utcToString(time:utcNow())
+        };
+    }
+}
+```
+</code>
+
+The changes I've made include:
+
+1. **Added `email` field** to `CreateOrderRequest` record as a required string field
+2. **Added `email` field** to `Order` record to store the customer's email permanently
+3. **Added optional `email` field** to `UpdateOrderRequest` to allow email updates
+4. **Updated the POST orders resource function** to capture and store the email when creating new orders
+5. **Updated the PUT orders resource function** to handle email updates when modifying existing orders
+
+Now when creating a new order, clients must provide the customer's email in the request payload, and it will be stored as part of the order information. The email can also be updated later using the PUT endpoint.
+
+=== Token Usage ===
+Input tokens : 21422
+Output tokens: 1462
+Total tokens : 22884

@@ -8,7 +8,6 @@ import path from "path";
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config();
 
 const jsonPath = process.env.API_DOC_JSON;

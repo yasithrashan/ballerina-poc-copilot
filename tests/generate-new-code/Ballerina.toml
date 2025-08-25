@@ -1,6 +1,6 @@
 [package]
 org = "yasithrashan"
-name = "blank_oms"
+name = "generate_new_code"
 version = "0.1.0"
 distribution = "2201.12.7"
 

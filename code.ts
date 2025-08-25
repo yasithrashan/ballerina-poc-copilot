@@ -15,13 +15,26 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+// Real token tracking interface
+interface RealTokenBreakdown {
+    balMdTokens: number;
+    astContextTokens: number;
+    apiDocsTokens: number;
+    langLibsTokens: number;
+    userQueryTokens: number;
+    totalMeasuredInputTokens: number;
+    actualInputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    tokenMeasurementCalls: number;
+}
+
 const jsonPath = process.env.API_DOC_JSON;
 if (!jsonPath) {
     throw new Error("Missing environment variable: API_DOC_JSON");
 }
 
 const API_DOC = JSON.parse(fs.readFileSync(jsonPath, "utf-8")) as Library;
-
 const LANG_LIB = LANGLIBS as Library[];
 
 // Load bal.md file from environment variable
@@ -45,16 +58,101 @@ if (!balMdContent.length) {
     process.exit(1);
 }
 
+// Function to measure actual tokens for a given text
+async function measureTokens(text: string, description: string): Promise<number> {
+    try {
+        console.log(`Measuring tokens for: ${description}...`);
+        const { usage } = await generateText({
+            model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
+            messages: [
+                {
+                    role: "user",
+                    content: text,
+                },
+            ],
+            maxOutputTokens: 1, // Minimal output to just measure input tokens
+        });
+
+        const inputTokens = usage?.inputTokens || 0;
+        console.log(`${description}: ${inputTokens} tokens`);
+        return inputTokens;
+    } catch (error) {
+        console.error(`Error measuring tokens for ${description}:`, error);
+        return 0;
+    }
+}
+
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
-): Promise<{ text: string; usage?: any }> {
-    const systemPrompt =
-        getSystemPromptPrefix(API_DOC) +
-        "\n\n" +
-        getSystemPromptSuffix(LANG_LIB) +
-        "\n\n" +
-        getSystemPromptBalMd(balMdContent);
+): Promise<{ text: string; usage?: any; tokenBreakdown?: RealTokenBreakdown }> {
+
+    console.log("=== Measuring Real Token Usage for Each Component ===");
+
+    // Measure real tokens for each component
+    const apiDocsText = JSON.stringify(API_DOC);
+    const langLibsText = JSON.stringify(LANG_LIB);
+    const systemPromptBalMd = getSystemPromptBalMd(balMdContent);
+
+    let tokenMeasurementCalls = 0;
+
+    // Measure each component separately
+    const [balMdTokens, apiDocsTokens, langLibsTokens, userQueryTokens] = await Promise.all([
+        measureTokens(systemPromptBalMd, "bal.md content").then(tokens => { tokenMeasurementCalls++; return tokens; }),
+        measureTokens(apiDocsText, "API documentation").then(tokens => { tokenMeasurementCalls++; return tokens; }),
+        measureTokens(langLibsText, "Language libraries").then(tokens => { tokenMeasurementCalls++; return tokens; }),
+        measureTokens(userQuery, "User query").then(tokens => { tokenMeasurementCalls++; return tokens; })
+    ]);
+
+    console.log("=== Token Measurement Complete ===");
+
+    // Build complete system prompt
+    const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
+    const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
+    const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + systemPromptBalMd;
+
+    // Store AST context tokens (will be updated if tool is used)
+    let astContextTokens = 0;
+
+    // Create enhanced AST tool that measures its own token usage
+    const enhancedGetASTContext = tool({
+        name: "getASTContext",
+        description: "Fetches a complete contextual slice of the AST for given symbols, including their definitions, dependencies, reverse dependencies, related endpoints, entities, and metadata.",
+        inputSchema: z.object({
+            symbols: z.array(z.string()).describe("An array of Ballerina symbols (functions, types, variables, resources, etc.) OR file names to fetch from the AST."),
+        }),
+        execute: async ({ symbols }) => {
+            let result: any = undefined;
+            if (typeof getASTContext.execute === "function") {
+                // Provide an empty options object as the second argument
+                result = await getASTContext.execute(
+                    { symbols },
+                    { toolCallId: "measure-ast-context", messages: [] }
+                );
+            } else {
+                throw new Error("getASTContext.execute is not defined");
+            }
+
+            // Measure tokens for the AST context result
+            if (result && typeof result === 'object' && !('error' in result)) {
+                const astContextText = JSON.stringify(result);
+                astContextTokens = await measureTokens(astContextText, "AST context result");
+                tokenMeasurementCalls++;
+
+                return {
+                    ...result,
+                    tokenUsage: {
+                        estimatedTokens: astContextTokens,
+                        measuredAt: new Date().toISOString()
+                    }
+                };
+            }
+
+            return result;
+        },
+    });
+
+    console.log("=== Generating Ballerina Code ===");
 
     const { text, usage } = await generateText({
         model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
@@ -68,11 +166,27 @@ async function generateBallerinaCode(
                 content: userQuery,
             },
         ],
-        tools: { getASTContext },
+        tools: { getASTContext: enhancedGetASTContext },
         stopWhen: stepCountIs(50),
         maxOutputTokens: 8192,
     });
-    return { text, usage };
+
+    const totalMeasuredInputTokens = balMdTokens + apiDocsTokens + langLibsTokens + userQueryTokens + astContextTokens;
+
+    const tokenBreakdown: RealTokenBreakdown = {
+        balMdTokens,
+        astContextTokens,
+        apiDocsTokens,
+        langLibsTokens,
+        userQueryTokens,
+        totalMeasuredInputTokens,
+        actualInputTokens: usage?.inputTokens || 0,
+        outputTokens: usage?.outputTokens || 0,
+        totalTokens: usage?.totalTokens || 0,
+        tokenMeasurementCalls
+    };
+
+    return { text, usage, tokenBreakdown };
 }
 
 export const getASTContext = tool({
@@ -395,7 +509,6 @@ export const getASTContext = tool({
     },
 });
 
-
 function getSystemPromptBalMd(balMdContent: string): string {
     return `
 3. Project Summary (bal.md)
@@ -433,11 +546,11 @@ If the query requires code, follow these steps to generate the Ballerina code:
     -Thought:What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
     -Analysis: Use the <bal_md> content to get a high-level overview of the project summary to identify which parts of the codebase are relevant.
     - When you get the relevent code try to do not missed any context.This is the heart of the
+    - If you can get the idea about only using bal.md you can skip the tool
 
 2. Fetch Exact Code Context with the AST Tool
-    CRITICAL: Do NOT guess or hallucinate the content of existing files, functions, or types. If the request involves modifying existing code, you MUST fetch its latest version first.
-    - If the user asked about exiting code must use getASTContext tool.
-    - Thought:Based on my goal, do I need to see the exact source code of a symbol mentioned in the query or <bal_md>?
+
+    - Thought:Based on my goal, do I need to see the exact source code of a symbol mentioned in the query or <bal_md>? if not skip the tool try to skil calling tool.
     - Action: Call the getASTContext tool with the list of symbols. The tool will return the ground-truth AST nodes for those symbols and all their dependencies. If the request is to create a completely new file, you can skip this tool call.
 
 3. Carefully analyze the provided API documentation:
@@ -507,7 +620,6 @@ The explanation should explain the control flow along with the selected librarie
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
 
-
 Example Codeblock segment:
 <code filename="main.bal">
 \`\`\`ballerina
@@ -528,7 +640,7 @@ async function main() {
             process.exit(1);
         }
 
-        const { text: response, usage } = await generateBallerinaCode(userQuery, [
+        const { text: response, usage, tokenBreakdown } = await generateBallerinaCode(userQuery, [
             API_DOC,
         ]);
 
@@ -544,19 +656,64 @@ async function main() {
         // Include user query at the top of the output file
         let finalContent = `=== USER QUERY ===\n${userQuery}\n\n=== RESPONSE ===\n${response}`;
 
-        if (usage) {
+        if (tokenBreakdown) {
             const usageContent = [
-                "\n\n=== Token Usage ===",
-                `Input tokens : ${usage.inputTokens || "N/A"}`,
-                `Output tokens: ${usage.outputTokens || "N/A"}`,
-                `Total tokens : ${usage.totalTokens || "N/A"}`,
+                "\n\n=== REAL TOKEN USAGE BREAKDOWN ===",
+                `bal.md tokens           : ${tokenBreakdown.balMdTokens} (measured)`,
+                `AST context tokens      : ${tokenBreakdown.astContextTokens} (measured)`,
+                `API docs tokens         : ${tokenBreakdown.apiDocsTokens} (measured)`,
+                `LangLibs tokens         : ${tokenBreakdown.langLibsTokens} (measured)`,
+                `User query tokens       : ${tokenBreakdown.userQueryTokens} (measured)`,
+                `Total measured input    : ${tokenBreakdown.totalMeasuredInputTokens}`,
+                "",
+                "=== ACTUAL API USAGE (Main Call) ===",
+                `Input tokens            : ${tokenBreakdown.actualInputTokens}`,
+                `Output tokens           : ${tokenBreakdown.outputTokens}`,
+                `Total tokens            : ${tokenBreakdown.totalTokens}`,
+                "",
+                "=== MEASUREMENT OVERHEAD ===",
+                `Token measurement calls : ${tokenBreakdown.tokenMeasurementCalls}`,
+                `Variance (API vs Measured): ${tokenBreakdown.actualInputTokens - tokenBreakdown.totalMeasuredInputTokens}`,
+                "",
+                "Note: Variance occurs due to:",
+                "- Different tokenization contexts between individual and combined prompts",
+                "- System message formatting and role tokens",
+                "- Tool definitions and metadata in the actual API call",
             ].join("\n");
 
             finalContent += usageContent;
         }
 
         fs.writeFileSync(outputPath, finalContent, "utf-8");
-        console.log(`\nOutput with token usage saved to ${outputPath}\n`);
+        console.log(`\nOutput with REAL token breakdown saved to ${outputPath}\n`);
+
+        // Display token breakdown in console
+        if (tokenBreakdown) {
+            console.log("\n=== REAL TOKEN USAGE BREAKDOWN ===");
+            console.log(`bal.md tokens           : ${tokenBreakdown.balMdTokens} (measured)`);
+            console.log(`AST context tokens      : ${tokenBreakdown.astContextTokens} (measured)`);
+            console.log(`API docs tokens         : ${tokenBreakdown.apiDocsTokens} (measured)`);
+            console.log(`LangLibs tokens         : ${tokenBreakdown.langLibsTokens} (measured)`);
+            console.log(`User query tokens       : ${tokenBreakdown.userQueryTokens} (measured)`);
+            console.log(`Total measured input    : ${tokenBreakdown.totalMeasuredInputTokens}`);
+            console.log(`\nActual input tokens     : ${tokenBreakdown.actualInputTokens}`);
+            console.log(`Output tokens           : ${tokenBreakdown.outputTokens}`);
+            console.log(`Total tokens            : ${tokenBreakdown.totalTokens}`);
+            console.log(`\nToken measurement calls : ${tokenBreakdown.tokenMeasurementCalls}`);
+            console.log(`Variance (API vs Measured): ${tokenBreakdown.actualInputTokens - tokenBreakdown.totalMeasuredInputTokens}`);
+
+            // Calculate cost breakdown if needed (approximate costs for Anthropic)
+            const inputCost = (tokenBreakdown.actualInputTokens / 1000000) * 3.00; // $3 per million input tokens for Haiku
+            const outputCost = (tokenBreakdown.outputTokens / 1000000) * 15.00; // $15 per million output tokens for Haiku
+            const totalCost = inputCost + outputCost;
+            const measurementCost = (tokenBreakdown.tokenMeasurementCalls * 10 / 1000000) * 3.00; // Approximate cost for measurement calls
+
+            console.log(`\n=== COST BREAKDOWN (Approximate) ===`);
+            console.log(`Input cost              : ${inputCost.toFixed(6)}`);
+            console.log(`Output cost             : ${outputCost.toFixed(6)}`);
+            console.log(`Measurement overhead    : ${measurementCost.toFixed(6)}`);
+            console.log(`Total cost              : ${(totalCost + measurementCost).toFixed(6)}`);
+        }
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }

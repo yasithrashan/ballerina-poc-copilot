@@ -1,0 +1,1276 @@
+[
+  {
+    "name": "ballerina/http",
+    "description": "This module allows you to access the http client and server endpoints.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "The HTTP client provides the capability for initiating contact with a remote HTTP service. The API it provides includes the functions for the standard HTTP methods forwarding a received request and sending requests using custom HTTP verbs.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Gets invoked to initialize the client. During initialization, the configurations provided through the config record is used to determine which type of additional behaviours are added to the endpoint (e.g., caching, security, circuit breaking).",
+            "parameters": [
+              {
+                "name": "url",
+                "type": {
+                  "name": "string"
+                },
+                "description": "URL of the target service"
+              },
+              {
+                "name": "config",
+                "type": {
+                  "name": "ClientConfiguration?",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "ClientConfiguration"
+                    }
+                  ]
+                },
+                "description": "The configurations to be used when initializing the client"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "nil"
+              }
+            }
+          },
+          {
+            "name": "post",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP POST requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "name": "ClientConfiguration",
+        "description": "Provides a set of configurations for controlling the behaviours when communicating with a remote HTTP endpoint. The following fields are inherited from the other configuration records in addition to the Client-specific configs.",
+        "type": "Record",
+        "fields": [
+          {
+            "name": "timeout",
+            "type": {
+              "name": "int"
+            },
+            "description": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ballerinax/github",
+    "description": "[GitHub](https://github.com/) is a widely used platform for version control and collaboration, allowing developers to work together on projects from anywhere. It hosts a vast array of both open-source and private projects, providing a suite of development tools for collaborative software development.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "GitHub's v3 REST API.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Gets invoked to initialize the `connector`.",
+            "parameters": [
+              {
+                "name": "config",
+                "description": "The configurations to be used when initializing the `connector`",
+                "type": {
+                  "name": "ConnectionConfig",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "ConnectionConfig"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "serviceUrl",
+                "description": "URL of the target service",
+                "type": {
+                  "name": "string"
+                },
+                "default": "\"https://api.github.com\""
+              }
+            ],
+            "return": {
+              "description": "An error if connector initialization failed",
+              "type": {
+                "name": "error?"
+              }
+            }
+          },
+          {
+            "accessor": "post",
+            "paths": [
+              "repos",
+              {
+                "name": "owner",
+                "type": "string"
+              },
+              {
+                "name": "repo",
+                "type": "string"
+              },
+              "issues"
+            ],
+            "type": "Resource Function",
+            "description": "Create an issue",
+            "parameters": [
+              {
+                "name": "payload",
+                "description": "",
+                "type": {
+                  "name": "Repo_issues_body",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "Repo_issues_body"
+                    }
+                  ]
+                }
+              }
+            ],
+            "return": {
+              "description": "Response",
+              "type": {
+                "name": "Issue|error",
+                "links": [
+                  {
+                    "category": "internal",
+                    "recordName": "Issue"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "accessor": "post",
+            "paths": [
+              "repos",
+              {
+                "name": "owner",
+                "type": "string"
+              },
+              {
+                "name": "repo",
+                "type": "string"
+              },
+              "pulls"
+            ],
+            "type": "Resource Function",
+            "description": "Create a pull request",
+            "parameters": [
+              {
+                "name": "payload",
+                "description": "",
+                "type": {
+                  "name": "Repo_pulls_body",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "Repo_pulls_body"
+                    }
+                  ]
+                }
+              }
+            ],
+            "return": {
+              "description": "Response",
+              "type": {
+                "name": "PullRequest|error",
+                "links": [
+                  {
+                    "category": "internal",
+                    "recordName": "PullRequest"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "fields": [
+          {
+            "name": "auth",
+            "description": "Configurations related to client authentication",
+            "type": {
+              "name": "http:BearerTokenConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "BearerTokenConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "httpVersion",
+            "description": "The HTTP version understood by the client",
+            "type": {
+              "name": "http:HttpVersion",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "HttpVersion",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            },
+            "default": "http:HTTP_2_0"
+          },
+          {
+            "name": "http1Settings",
+            "description": "Configurations related to HTTP/1.x protocol",
+            "type": {
+              "name": "ClientHttp1Settings",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ClientHttp1Settings"
+                }
+              ]
+            }
+          },
+          {
+            "name": "http2Settings",
+            "description": "Configurations related to HTTP/2 protocol",
+            "type": {
+              "name": "http:ClientHttp2Settings",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ClientHttp2Settings",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "timeout",
+            "description": "The maximum time to wait (in seconds) for a response before closing the connection",
+            "type": {
+              "name": "decimal"
+            },
+            "default": "60"
+          },
+          {
+            "name": "forwarded",
+            "description": "The choice of setting `forwarded`/`x-forwarded` header",
+            "type": {
+              "name": "string"
+            },
+            "default": "\"disable\""
+          },
+          {
+            "name": "poolConfig",
+            "description": "Configurations associated with request pooling",
+            "type": {
+              "name": "http:PoolConfiguration",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "PoolConfiguration",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cache",
+            "description": "HTTP caching related configurations",
+            "type": {
+              "name": "http:CacheConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "CacheConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "compression",
+            "description": "Specifies the way of handling compression (`accept-encoding`) header",
+            "type": {
+              "name": "http:Compression",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "Compression",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            },
+            "default": "http:COMPRESSION_AUTO"
+          },
+          {
+            "name": "circuitBreaker",
+            "description": "Configurations associated with the behaviour of the Circuit Breaker",
+            "type": {
+              "name": "http:CircuitBreakerConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "CircuitBreakerConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "retryConfig",
+            "description": "Configurations associated with retrying",
+            "type": {
+              "name": "http:RetryConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "RetryConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "responseLimits",
+            "description": "Configurations associated with inbound response size limits",
+            "type": {
+              "name": "http:ResponseLimitConfigs",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ResponseLimitConfigs",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "secureSocket",
+            "description": "SSL/TLS-related options",
+            "type": {
+              "name": "http:ClientSecureSocket",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ClientSecureSocket",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "proxy",
+            "description": "Proxy server related options",
+            "type": {
+              "name": "http:ProxyConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ProxyConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "validation",
+            "description": "Enables the inbound payload validation functionality which provided by the constraint package. Enabled by default",
+            "type": {
+              "name": "boolean"
+            },
+            "default": "true"
+          }
+        ],
+        "name": "ConnectionConfig",
+        "description": "Provides a set of configurations for controlling the behaviours when communicating with a remote HTTP endpoint.",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "description": "The title of the issue.",
+            "type": {
+              "name": "string|int"
+            }
+          },
+          {
+            "name": "body",
+            "description": "The contents of the issue.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "assignee",
+            "description": "Login for the user that this issue should be assigned to. _NOTE: Only users with push access can set the assignee for new issues. The assignee is silently dropped otherwise. **This field is deprecated.**_",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "milestone",
+            "description": "",
+            "type": {
+              "name": "string|int?"
+            }
+          },
+          {
+            "name": "labels",
+            "description": "Labels to associate with this issue. _NOTE: Only users with push access can set labels for new issues. Labels are silently dropped otherwise._",
+            "type": {
+              "name": "(string|record {})[]"
+            }
+          },
+          {
+            "name": "assignees",
+            "description": "Logins for Users to assign to this issue. _NOTE: Only users with push access can set assignees for new issues. Assignees are silently dropped otherwise._",
+            "type": {
+              "name": "string[]"
+            }
+          }
+        ],
+        "name": "Repo_issues_body",
+        "description": "",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "node_id",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "url",
+            "description": "URL for the issue",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "repository_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "labels_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "comments_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "events_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "html_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "number",
+            "description": "Number uniquely identifying the issue within its repository",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "state",
+            "description": "State of the issue; either 'open' or 'closed'",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "state_reason",
+            "description": "The reason for the current state",
+            "type": {
+              "name": "    \"completed\"|\"reopened\"|\"not_planned\"?"
+            }
+          },
+          {
+            "name": "title",
+            "description": "Title of the issue",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "body",
+            "description": "Contents of the issue",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "user",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "NullableSimpleUser?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableSimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "labels",
+            "description": "Labels to associate with this issue; pass one or more label names to replace the set of labels on this issue; send an empty array to clear all labels from the issue; note that the labels are silently dropped for users without push access to the repository",
+            "type": {
+              "name": "(string|record {})[]"
+            }
+          },
+          {
+            "name": "assignee",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "NullableSimpleUser?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableSimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "assignees",
+            "description": "",
+            "type": {
+              "name": "SimpleUser[]?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "SimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "milestone",
+            "description": "A collection of related issues and pull requests.",
+            "type": {
+              "name": "NullableMilestone?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableMilestone"
+                }
+              ]
+            }
+          },
+          {
+            "name": "locked",
+            "description": "",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "active_lock_reason",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "comments",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "pull_request",
+            "description": "",
+            "type": {
+              "name": "Issue_pull_request",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Issue_pull_request"
+                }
+              ]
+            }
+          },
+          {
+            "name": "closed_at",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "created_at",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "updated_at",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "draft",
+            "description": "",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "closed_by",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "NullableSimpleUser?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableSimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "body_html",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "body_text",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "timeline_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "repository",
+            "description": "A repository on GitHub.",
+            "type": {
+              "name": "Repository",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Repository"
+                }
+              ]
+            }
+          },
+          {
+            "name": "performed_via_github_app",
+            "description": "GitHub apps are a new way to extend GitHub. They can be installed directly on organizations and user accounts and granted access to specific repositories. They come with granular permissions and built-in webhooks. GitHub apps are first class actors within GitHub.",
+            "type": {
+              "name": "NullableIntegration?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableIntegration"
+                }
+              ]
+            }
+          },
+          {
+            "name": "author_association",
+            "description": "How the author is associated with the repository.",
+            "type": {
+              "name": "AuthorAssociation",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "AuthorAssociation"
+                }
+              ]
+            }
+          },
+          {
+            "name": "reactions",
+            "description": "",
+            "type": {
+              "name": "ReactionRollup",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ReactionRollup"
+                }
+              ]
+            }
+          }
+        ],
+        "name": "Issue",
+        "description": "Issues are a great way to keep track of tasks, enhancements, and bugs for your projects.",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "description": "The title of the new pull request. Required unless `issue` is specified.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "head",
+            "description": "The name of the branch where your changes are implemented. For cross-repository pull requests in the same network, namespace `head` with a user like this: `username:branch`.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "head_repo",
+            "description": "The name of the repository where the changes in the pull request were made. This field is required for cross-repository pull requests if both repositories are owned by the same organization.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "base",
+            "description": "The name of the branch you want the changes pulled into. This should be an existing branch on the current repository. You cannot submit a pull request to one repository that requests a merge to a base of another repository.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "body",
+            "description": "The contents of the pull request.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "maintainer_can_modify",
+            "description": "Indicates whether [maintainers can modify](https://docs.github.com/articles/allowing-changes-to-a-pull-request-branch-created-from-a-fork/) the pull request.",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "draft",
+            "description": "Indicates whether the pull request is a draft. See \"[Draft Pull Requests](https://docs.github.com/articles/about-pull-requests#draft-pull-requests)\" in the GitHub Help documentation to learn more.",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "issue",
+            "description": "An issue in the repository to convert to a pull request. The issue title, body, and comments will become the title, body, and comments on the new pull request. Required unless `title` is specified.",
+            "type": {
+              "name": "int"
+            }
+          }
+        ],
+        "name": "Repo_pulls_body",
+        "description": "",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "id",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "node_id",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "html_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "diff_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "patch_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "issue_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "commits_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "review_comments_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "review_comment_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "comments_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "statuses_url",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "number",
+            "description": "Number uniquely identifying the pull request within its repository.",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "state",
+            "description": "State of this Pull Request. Either `open` or `closed`.",
+            "type": {
+              "name": "    \"open\"|\"closed\" "
+            }
+          },
+          {
+            "name": "locked",
+            "description": "",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "title",
+            "description": "The title of the pull request.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "user",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "SimpleUser",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "SimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "body",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "labels",
+            "description": "",
+            "type": {
+              "name": "Pullrequest_labels[]",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Pullrequest_labels"
+                }
+              ]
+            }
+          },
+          {
+            "name": "milestone",
+            "description": "A collection of related issues and pull requests.",
+            "type": {
+              "name": "NullableMilestone?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableMilestone"
+                }
+              ]
+            }
+          },
+          {
+            "name": "active_lock_reason",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "created_at",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "updated_at",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "closed_at",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "merged_at",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "merge_commit_sha",
+            "description": "",
+            "type": {
+              "name": "string?"
+            }
+          },
+          {
+            "name": "assignee",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "NullableSimpleUser?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableSimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "assignees",
+            "description": "",
+            "type": {
+              "name": "SimpleUser[]?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "SimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "requested_reviewers",
+            "description": "",
+            "type": {
+              "name": "SimpleUser[]?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "SimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "requested_teams",
+            "description": "",
+            "type": {
+              "name": "TeamSimple[]?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "TeamSimple"
+                }
+              ]
+            }
+          },
+          {
+            "name": "head",
+            "description": "",
+            "type": {
+              "name": "Pullrequest_head",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Pullrequest_head"
+                }
+              ]
+            }
+          },
+          {
+            "name": "base",
+            "description": "",
+            "type": {
+              "name": "Pullrequest_base",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Pullrequest_base"
+                }
+              ]
+            }
+          },
+          {
+            "name": "_links",
+            "description": "",
+            "type": {
+              "name": "Pullrequestsimple__links",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "Pullrequestsimple__links"
+                }
+              ]
+            }
+          },
+          {
+            "name": "author_association",
+            "description": "How the author is associated with the repository.",
+            "type": {
+              "name": "AuthorAssociation",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "AuthorAssociation"
+                }
+              ]
+            }
+          },
+          {
+            "name": "auto_merge",
+            "description": "The status of auto merging a pull request.",
+            "type": {
+              "name": "AutoMerge?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "AutoMerge"
+                }
+              ]
+            }
+          },
+          {
+            "name": "draft",
+            "description": "Indicates whether or not the pull request is a draft.",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "merged",
+            "description": "",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "mergeable",
+            "description": "",
+            "type": {
+              "name": "boolean?"
+            }
+          },
+          {
+            "name": "rebaseable",
+            "description": "",
+            "type": {
+              "name": "boolean?"
+            }
+          },
+          {
+            "name": "mergeable_state",
+            "description": "",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "merged_by",
+            "description": "A GitHub user.",
+            "type": {
+              "name": "NullableSimpleUser?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "NullableSimpleUser"
+                }
+              ]
+            }
+          },
+          {
+            "name": "comments",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "review_comments",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "maintainer_can_modify",
+            "description": "Indicates whether maintainers can modify the pull request.",
+            "type": {
+              "name": "boolean"
+            }
+          },
+          {
+            "name": "commits",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "additions",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "deletions",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "changed_files",
+            "description": "",
+            "type": {
+              "name": "int"
+            }
+          }
+        ],
+        "name": "PullRequest",
+        "description": "Pull requests let you tell others about changes you've pushed to a repository on GitHub. Once a pull request is sent, interested parties can review the set of changes, discuss potential modifications, and even push follow-up commits if necessary.",
+        "type": "Record"
+      }
+    ]
+  },
+  {
+    "name": "ballerinax/slack",
+    "description": "[Slack](https://slack.com/) is a collaboration platform for teams, offering real-time messaging, file sharing, and integrations with various tools. It helps streamline communication and enhance productivity through organized channels and direct messaging.",
+    "clients": [],
+    "typeDefs": []
+  }
+]

@@ -16,6 +16,6 @@
     "dotenv": "^17.2.1"
   },
   "scripts": {
-    "start": "bun run ./src/ai/code/code.ts"
+    "start": "bun run ./code.ts"
   }
 }

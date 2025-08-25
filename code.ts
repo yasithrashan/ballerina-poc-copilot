@@ -83,7 +83,7 @@ export const getASTContext = tool({
         symbols: z
             .array(z.string())
             .describe(
-                "An array of Ballerina symbols (functions, types, etc.) to fetch from the AST."
+                "An array of Ballerina symbols (functions, types, variables, resources, etc.) OR file names to fetch from the AST."
             ),
     }),
     execute: async ({ symbols }) => {
@@ -97,128 +97,281 @@ export const getASTContext = tool({
 
         const astContent = JSON.parse(fs.readFileSync(astPath, "utf-8"));
 
-        // Build indices for fast lookups
+        // Build comprehensive indices for fast lookups
         const nodeMapById = new Map<string, any>();
         const nodesByName = new Map<string, any[]>();
+        const nodesByType = new Map<string, any[]>();
+        const fileNodes = new Map<string, any[]>(); // For file-based queries
+
+        // Handle dependency relationships
         const relationships = astContent.dependency_graph?.relationships || {};
         const endpoints = astContent.dependency_graph?.endpoints || {};
 
-        const indexNode = (node: any) => {
+        let syntheticIdCounter = 0;
+
+        // Enhanced indexing function
+        const indexNode = (node: any, context: string = '', sourceFile?: string) => {
             if (!node || typeof node !== "object") return;
-            if (node.id) nodeMapById.set(node.id, node);
-            if (node.name && typeof node.name === "string") {
-                if (!nodesByName.has(node.name)) nodesByName.set(node.name, []);
-                nodesByName.get(node.name)!.push(node);
+
+            // Generate meaningful IDs
+            let nodeId: string | undefined = node.id;
+            if (!nodeId && node.name) {
+                nodeId = context ? `${context}_${node.name}` : node.name;
             }
-            for (const key in node) {
-                const value = node[key];
-                if (Array.isArray(value)) value.forEach(indexNode);
-                else if (typeof value === "object") indexNode(value);
+            if (!nodeId && node.kind) {
+                nodeId = `${context}_${node.kind}_${syntheticIdCounter++}`;
+            }
+            if (!nodeId) {
+                nodeId = `${context}_node_${syntheticIdCounter++}`;
+            }
+            node.id = nodeId;
+
+            // Add source file reference
+            if (sourceFile) {
+                node._sourceFile = sourceFile;
+            }
+
+            // Index by ID
+            nodeMapById.set(nodeId, node);
+
+            // Index by name (case-insensitive)
+            if (node.name && typeof node.name === "string") {
+                const name = node.name;
+                if (!nodesByName.has(name)) nodesByName.set(name, []);
+                nodesByName.get(name)!.push(node);
+
+                // Also index by lowercase for fuzzy matching
+                const lowerName = name.toLowerCase();
+                if (!nodesByName.has(lowerName)) nodesByName.set(lowerName, []);
+                if (lowerName !== name) {
+                    nodesByName.get(lowerName)!.push(node);
+                }
+            }
+
+            // Index by type/kind
+            if (node.kind) {
+                if (!nodesByType.has(node.kind)) nodesByType.set(node.kind, []);
+                nodesByType.get(node.kind)!.push(node);
+            }
+
+            // Index by method (for resources)
+            if (node.method && node.path) {
+                const methodPath = `${node.method.toUpperCase()} ${node.path}`;
+                if (!nodesByName.has(methodPath)) nodesByName.set(methodPath, []);
+                nodesByName.get(methodPath)!.push(node);
+            }
+
+            // Index by file (if sourceFile provided)
+            if (sourceFile) {
+                if (!fileNodes.has(sourceFile)) fileNodes.set(sourceFile, []);
+                fileNodes.get(sourceFile)!.push(node);
+            }
+
+            // Recursively index child nodes
+            for (const [key, value] of Object.entries(node)) {
+                if (key.startsWith('_')) continue; // Skip our internal properties
+
+                if (Array.isArray(value)) {
+                    value.forEach((item, index) =>
+                        indexNode(item, `${nodeId}_${key}_${index}`, sourceFile)
+                    );
+                } else if (typeof value === "object") {
+                    indexNode(value, `${nodeId}_${key}`, sourceFile);
+                }
             }
         };
+
+        // Index all modules and their contents
         if (astContent.modules) {
-            astContent.modules.forEach((mod: any) => indexNode(mod));
+            astContent.modules.forEach((module: any) => {
+                const sourceFile = module.sourceFile || 'main.bal'; // Default source file
+                indexNode(module, `module_${module.name || 'default'}`, sourceFile);
+            });
         }
 
-        // Initial nodes for the given symbols
+        // Find initial nodes based on symbols
         const initialNodeIds = new Set<string>();
+        const matchedSymbols = new Set<string>();
+
         for (const symbol of symbols) {
+            let found = false;
+
+            // 1. Check if it's a file name
+            if (symbol.endsWith('.bal')) {
+                const fileNodeList = fileNodes.get(symbol);
+                if (fileNodeList) {
+                    fileNodeList.forEach(node => {
+                        if (node.id) {
+                            initialNodeIds.add(node.id);
+                            found = true;
+                        }
+                    });
+                }
+            }
+
+            // 2. Direct name match
             if (nodesByName.has(symbol)) {
                 nodesByName.get(symbol)!.forEach(node => {
-                    if (node.id) initialNodeIds.add(node.id);
+                    if (node.id) {
+                        initialNodeIds.add(node.id);
+                        found = true;
+                    }
                 });
+            }
+
+            // 3. Case-insensitive match
+            const lowerSymbol = symbol.toLowerCase();
+            if (nodesByName.has(lowerSymbol)) {
+                nodesByName.get(lowerSymbol)!.forEach(node => {
+                    if (node.id) {
+                        initialNodeIds.add(node.id);
+                        found = true;
+                    }
+                });
+            }
+
+            // 4. Partial matching for resources (e.g., "delete" matches delete resources)
+            for (const [name, nodeList] of nodesByName.entries()) {
+                if (name.toLowerCase().includes(lowerSymbol) || lowerSymbol.includes(name.toLowerCase())) {
+                    nodeList.forEach(node => {
+                        if (node.id) {
+                            initialNodeIds.add(node.id);
+                            found = true;
+                        }
+                    });
+                }
+            }
+
+            // 5. Direct ID match
+            if (nodeMapById.has(symbol)) {
+                initialNodeIds.add(symbol);
+                found = true;
+            }
+
+            if (found) {
+                matchedSymbols.add(symbol);
             }
         }
 
-        // Dependency resolution (forward + reverse)
+        // Enhanced dependency resolution
         const contextIds = new Set<string>(initialNodeIds);
         const worklist = [...initialNodeIds];
 
+        // Find dependencies in node structure
         const findDependenciesInNode = (node: any) => {
             if (!node || typeof node !== "object") return;
-            const dependencyKeys = ['resolvesTo', 'typeResolvesTo'];
+
+            const dependencyKeys = [
+                "resolvesTo", "typeResolvesTo", "usesVariables", "usesFunctions",
+                "usesTypes", "dependsOn", "calls", "accesses", "contains"
+            ];
+
             for (const key of dependencyKeys) {
-                if (node[key] && typeof node[key] === 'string') {
-                    const depId = node[key];
-                    if (!contextIds.has(depId)) {
-                        contextIds.add(depId);
-                        worklist.push(depId);
+                const value = node[key];
+                if (typeof value === "string") {
+                    if (nodeMapById.has(value) && !contextIds.has(value)) {
+                        contextIds.add(value);
+                        worklist.push(value);
                     }
+                } else if (Array.isArray(value)) {
+                    value.forEach(dep => {
+                        if (typeof dep === "string" && nodeMapById.has(dep) && !contextIds.has(dep)) {
+                            contextIds.add(dep);
+                            worklist.push(dep);
+                        }
+                    });
                 }
             }
-            for (const key in node) {
-                const value = node[key];
-                if (Array.isArray(value)) value.forEach(findDependenciesInNode);
-                else if (typeof value === "object") findDependenciesInNode(value);
+
+            // Recursively search in nested objects
+            for (const [key, val] of Object.entries(node)) {
+                if (key.startsWith('_')) continue;
+                if (Array.isArray(val)) {
+                    val.forEach(findDependenciesInNode);
+                } else if (typeof val === "object") {
+                    findDependenciesInNode(val);
+                }
             }
         };
 
-        // Reverse dependencies
-        const findReverseDependencies = (targetIds: Set<string>) => {
-            const reverseMatches: string[] = [];
-            for (const [id, node] of nodeMapById.entries()) {
-                let found = false;
-                const scanNode = (obj: any) => {
-                    if (!obj || typeof obj !== "object" || found) return;
-                    for (const key in obj) {
-                        const val = obj[key];
-                        if (typeof val === "string" && targetIds.has(val)) {
-                            reverseMatches.push(id);
-                            found = true;
-                            break;
-                        } else if (Array.isArray(val)) val.forEach(scanNode);
-                        else if (typeof val === "object") scanNode(val);
-                    }
-                };
-                scanNode(node);
-            }
-            return reverseMatches;
-        };
-
+        // Process dependency worklist
         while (worklist.length > 0) {
             const currentId = worklist.shift()!;
             const currentNode = nodeMapById.get(currentId);
-            if (currentNode) findDependenciesInNode(currentNode);
+            if (currentNode) {
+                findDependenciesInNode(currentNode);
+            }
         }
 
-        const reverseDeps = findReverseDependencies(initialNodeIds);
-        reverseDeps.forEach(id => contextIds.add(id));
+        // Add reverse dependencies from relationship graph
+        if (Object.keys(relationships).length > 0) {
+            const addRelatedNodes = (targetIds: Set<string>, relType: 'from' | 'to') => {
+                for (const [relId, rel] of Object.entries(relationships)) {
+                    const relObj = rel as { from?: string; to?: string; type?: string };
+                    const checkId = relType === 'from' ? relObj.to : relObj.from;
+                    const addId = relType === 'from' ? relObj.from : relObj.to;
 
-        // Build structured context
-        const relevantNodes = [...contextIds].map(id => nodeMapById.get(id)).filter(Boolean);
-
-        // Add additional related context from dependency_graph
-        const relatedEndpoints = symbols
-            .map(s => Object.entries(endpoints).filter(([ep, data]) => {
-                if (
-                    typeof data === "object" &&
-                    data !== null &&
-                    ("entity" in data || "operations" in data)
-                ) {
-                    const d = data as { entity?: string; operations?: string[] };
-                    return d.entity === s || d.operations?.includes(s);
+                    if (checkId && addId && targetIds.has(checkId)) {
+                        // Try to find the node by name if not found by ID
+                        let foundNode = nodeMapById.get(addId);
+                        if (!foundNode && nodesByName.has(addId)) {
+                            foundNode = nodesByName.get(addId)![0];
+                        }
+                        if (foundNode && foundNode.id && !contextIds.has(foundNode.id)) {
+                            contextIds.add(foundNode.id);
+                        }
+                    }
                 }
-                return false;
-            }))
-            .flat();
+            };
 
-        const relatedRelationships = Object.entries(relationships)
-            .filter(([_, rel]) => {
-                const r = rel as { from?: string; to?: string };
-                return symbols.includes(r.from ?? "") || symbols.includes(r.to ?? "");
-            });
+            addRelatedNodes(initialNodeIds, 'from'); // Add nodes that depend on initial nodes
+            addRelatedNodes(initialNodeIds, 'to');   // Add nodes that initial nodes depend on
+        }
 
-        // Prepare final structured result
+        // Collect all relevant nodes
+        const relevantNodes = [...contextIds]
+            .map(id => nodeMapById.get(id))
+            .filter(Boolean);
+
+        // Find related endpoints
+        const relatedEndpoints = [];
+        for (const [endpoint, data] of Object.entries(endpoints)) {
+            if (typeof data === "object" && data !== null) {
+                const endpointData = data as { entity?: string; operations?: string[]; resource_id?: string };
+                const isRelated = matchedSymbols.has(endpointData.entity || '') ||
+                    endpointData.operations?.some(op => matchedSymbols.has(op)) ||
+                    (endpointData.resource_id && contextIds.has(endpointData.resource_id));
+
+                if (isRelated) {
+                    relatedEndpoints.push([endpoint, data]);
+                }
+            }
+        }
+
+        // Find related relationships
+        const relatedRelationships = [];
+        for (const [relId, rel] of Object.entries(relationships)) {
+            const relObj = rel as { from?: string; to?: string; type?: string };
+            if ((relObj.from && contextIds.has(relObj.from)) ||
+                (relObj.to && contextIds.has(relObj.to))) {
+                relatedRelationships.push([relId, rel]);
+            }
+        }
+
+        // Prepare final result
         const result = {
             symbols,
+            matchedSymbols: [...matchedSymbols],
             nodes: relevantNodes,
-            endpoints: relatedEndpoints.length ? relatedEndpoints : undefined,
-            relationships: relatedRelationships.length ? relatedRelationships : undefined,
+            endpoints: relatedEndpoints.length ? Object.fromEntries(relatedEndpoints) : undefined,
+            relationships: relatedRelationships.length ? Object.fromEntries(relatedRelationships) : undefined,
             metadata: {
-                source_files: astContent.project_structure?.source_files || [],
-                imports: astContent.ast?.imports || [],
-                dependencies: astContent.project_structure?.dependencies || {}
-            }
+                source_files: astContent.project_structure?.source_files || ['main.bal'],
+                imports: astContent.ast?.imports || astContent.modules?.[0]?.imports || [],
+                dependencies: astContent.project_structure?.dependencies || {},
+                totalNodesFound: relevantNodes.length,
+                searchStrategy: symbols.some(s => s.includes('.bal')) ? 'file-based' : 'symbol-based'
+            },
         };
 
         // Save result to file
@@ -236,6 +389,7 @@ export const getASTContext = tool({
         console.log("TOOL CALLED: getASTContext");
         console.log(`Context saved to ${filePath}`);
         console.log(`Found ${relevantNodes.length} nodes for symbols:`, symbols);
+        console.log(`Matched symbols:`, [...matchedSymbols]);
 
         return { ...result, savedTo: filePath };
     },
@@ -278,9 +432,11 @@ If the query requires code, follow these steps to generate the Ballerina code:
     -First, analyze the user's query and the Project Summary (<bal_md>).
     -Thought:What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
     -Analysis: Use the <bal_md> content to get a high-level overview of the project summary to identify which parts of the codebase are relevant.
+    - When you get the relevent code try to do not missed any context.This is the heart of the
 
 2. Fetch Exact Code Context with the AST Tool
     CRITICAL: Do NOT guess or hallucinate the content of existing files, functions, or types. If the request involves modifying existing code, you MUST fetch its latest version first.
+    - If the user asked about exiting code must use getASTContext tool.
     - Thought:Based on my goal, do I need to see the exact source code of a symbol mentioned in the query or <bal_md>?
     - Action: Call the getASTContext tool with the list of symbols. The tool will return the ground-truth AST nodes for those symbols and all their dependencies. If the request is to create a completely new file, you can skip this tool call.
 
@@ -344,6 +500,9 @@ Important reminders:
 - For GraphQL service related queries, If the user haven't specified their own GraphQL Schema, Write the proposed GraphQL schema for the user query right after explanation before generating the ballerina code. Use same names as the GraphQL Schema when defining record types.
 
 Begin your response with the explanation, once the entire explanation is finished only, include codeblock segments(if any) in the end of the response.
+Also can you mention why you call or not call the tool
+If you feel like the given api docs are not enough for complete user user task, add this also.
+Its better to print the feedback in the below of your response
 The explanation should explain the control flow along with the selected libraries and their functions.
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
@@ -373,7 +532,7 @@ async function main() {
             API_DOC,
         ]);
 
-        const outputDir = path.join(process.cwd(), "src", "ai", "poc");
+        const outputDir = path.join(process.cwd(), "poc");
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }

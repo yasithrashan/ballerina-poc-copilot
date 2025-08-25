@@ -171,7 +171,6 @@
         ]
       }
     ],
-    "functions": null,
     "typeDefs": [
       {
         "name": "ClientConfiguration",
@@ -187,8 +186,7 @@
           }
         ]
       }
-    ],
-    "services": null
+    ]
   },
   {
     "name": "ballerinax/mysql",
@@ -450,53 +448,6 @@
             }
           },
           {
-            "name": "call",
-            "type": "Remote Function",
-            "description": "Executes an SQL query, which calls a stored procedure. This may or may not return results.\nOnce the results are processed, invoke the `close` method on the `sql:ProcedureCallResult`.",
-            "parameters": [
-              {
-                "name": "sqlQuery",
-                "description": "The SQL query such as `` `CALL sp_GetAlbums();` ``",
-                "type": {
-                  "name": "sql:ParameterizedCallQuery",
-                  "links": [
-                    {
-                      "category": "external",
-                      "recordName": "ParameterizedCallQuery",
-                      "libraryName": "ballerina/sql"
-                    }
-                  ]
-                }
-              },
-              {
-                "name": "rowTypes",
-                "description": "`typedesc` array of the records to which the results need to be returned",
-                "type": {
-                  "name": "typedesc<record {}>[]"
-                },
-                "default": "[]"
-              }
-            ],
-            "return": {
-              "description": "Summary of the execution and results are returned in an `sql:ProcedureCallResult`, or an `sql:Error`",
-              "type": {
-                "name": "sql:ProcedureCallResult|sql:Error",
-                "links": [
-                  {
-                    "category": "external",
-                    "recordName": "ProcedureCallResult",
-                    "libraryName": "ballerina/sql"
-                  },
-                  {
-                    "category": "external",
-                    "recordName": "Error",
-                    "libraryName": "ballerina/sql"
-                  }
-                ]
-              }
-            }
-          },
-          {
             "name": "close",
             "type": "Normal Function",
             "description": "Closes the MySQL client and shuts down the connection pool. The client must be closed only at the end of the\napplication lifetime (or closed for graceful stops in a service).",
@@ -518,7 +469,6 @@
         ]
       }
     ],
-    "functions": null,
     "typeDefs": [
       {
         "fields": [
@@ -592,83 +542,12 @@
         "description": "Provides a set of additional configurations related to the MySQL database connection.",
         "type": "Record"
       }
-    ],
-    "services": null
-  },
-  {
-    "name": "ballerina/time",
-    "description": "This module provides a set of APIs that have the capabilities to generate and manipulate UTC and localized time.",
-    "clients": [],
-    "functions": [
-      {
-        "name": "utcNow",
-        "type": "Normal Function",
-        "description": "Returns the UTC representing the current time (current instant of the system clock in seconds from the epoch of `1970-01-01T00:00:00`).\n```ballerina\ntime:Utc utc = time:utcNow();\n```",
-        "parameters": [
-          {
-            "name": "precision",
-            "description": "Specifies the number of zeros after the decimal point (e.g., 3 would give the millisecond precision\nand nil means native precision (nanosecond precision 9) of the clock)",
-            "type": {
-              "name": "int?"
-            },
-            "default": "()"
-          }
-        ],
-        "return": {
-          "description": "The `time:Utc` value corresponding to the current UTC time",
-          "type": {
-            "name": "Utc",
-            "links": [
-              {
-                "category": "internal",
-                "recordName": "Utc"
-              }
-            ]
-          }
-        }
-      },
-      {
-        "name": "utcToString",
-        "type": "Normal Function",
-        "description": "Converts a given `time:Utc` time to a RFC 3339 timestamp (e.g., `2007-12-03T10:15:30.00Z`).\n```ballerina\nstring utcString = time:utcToString(time:utcNow());\n```",
-        "parameters": [
-          {
-            "name": "utc",
-            "description": "Utc time as a tuple `[int, decimal]`",
-            "type": {
-              "name": "Utc",
-              "links": [
-                {
-                  "category": "internal",
-                  "recordName": "Utc"
-                }
-              ]
-            }
-          }
-        ],
-        "return": {
-          "description": "The corresponding RFC 3339 timestamp string",
-          "type": {
-            "name": "string"
-          }
-        }
-      }
-    ],
-    "typeDefs": [
-      {
-        "members": [],
-        "name": "Utc",
-        "description": "Point on UTC time-scale.\nThis is represented by a tuple of length 2.\nThe tuple is an ordered type and so the values can be\ncompared using the Ballerina <, <=, >, >= operators.\nThe first member of the tuple is int representing an integral number of\nseconds from the epoch.\nEpoch is the traditional UNIX epoch of `1970-01-01T00:00:00Z`.\nThe second member of the tuple is a decimal giving the fraction of\na second.\nFor times before the epoch, n is negative and f is\nnon-negative. In other words, the UTC time represented\nis on or after the second specified by n.\nLeap seconds are handled as follows. The first member\nof the tuple ignores leap seconds: it assumes that every day\nhas 86400 seconds. The second member of the tuple is >= 0.\nand is < 1 except during positive leaps seconds in which it\nis >= 1 and < 2. So given a tuple [n,f] after the epoch,\nn / 86400 gives the day number, and (n % 86400) + f gives the\ntime in seconds since midnight UTC (for which the limit is\n86401 on day with a positive leap second).",
-        "type": "IntersectionType"
-      }
-    ],
-    "services": null
+    ]
   },
   {
     "name": "ballerina/sql",
     "description": "This module provides the generic interface and functionality to interact with an SQL database. The corresponding database",
     "clients": [],
-    "functions": null,
     "typeDefs": [
       {
         "fields": [
@@ -716,7 +595,7 @@
         "fields": [
           {
             "name": "affectedRowCount",
-            "description": "Number of rows affected by the execution of the query. It may be one of the following,\n(1) A number greater than or equal to zero, the count of affected rows after the successful execution of the query\n(2) A value of the `SUCCESS_NO_INFO`, the count of affected rows is unknown after the successful execution of the query\n(3) A value of the `EXECUTION_FAILED`, the query execution failed",
+            "description": "Number of rows affected by the execution of the query. It may be one of the following,  \n(1) A number greater than or equal to zero, the count of affected rows after the successful execution of the query  \n(2) A value of the `SUCCESS_NO_INFO`, the count of affected rows is unknown after the successful execution of the query  \n(3) A value of the `EXECUTION_FAILED`, the query execution failed",
             "type": {
               "name": "int?"
             }
@@ -732,20 +611,7 @@
         "name": "ExecutionResult",
         "description": "Metadata of the query execution.",
         "type": "Record"
-      },
-      {
-        "functions": [],
-        "name": "ParameterizedCallQuery",
-        "description": "",
-        "type": "Class"
-      },
-      {
-        "functions": [],
-        "name": "ProcedureCallResult",
-        "description": "",
-        "type": "Class"
       }
-    ],
-    "services": null
+    ]
   }
 ]

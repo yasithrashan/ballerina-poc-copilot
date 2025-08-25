@@ -1,111 +1,95 @@
 import ballerina/http;
-import ballerina/time;
+import ballerina/io;
 
-// In-memory storage for orders
-map<Order> orderStorage = {};
-int orderCounter = 1000;
+// Book record to represent book details
+type Book record {
+    int id;
+    string title;
+    string author;
+    decimal price;
+    int quantity;
+};
 
-// HTTP service for order management
-service /api on new http:Listener(8080) {
+// In-memory book repository
+Book[] bookRepository = [];
+int bookIdCounter = 1;
 
-    // Create a new order
-    resource function post orders(CreateOrderRequest createRequest) returns Order|ErrorResponse|error {
-        // Generate order ID
-        orderCounter += 1;
-        string orderId = string `ORD-${orderCounter}`;
-
-        // Calculate total amount
-        decimal totalAmount = 0;
-        foreach OrderItem item in createRequest.items {
-            totalAmount += item.quantity * item.unitPrice;
+// Book management service
+service / on new http:Listener(8080) {
+    // Add a new book
+    resource function post books(@http:Payload Book newBook) returns http:Created|http:BadRequest {
+        // Validate book input
+        if newBook.title == "" || newBook.author == "" || newBook.price <= 0 ) {
+            return {body: "Invalid book details"};
         }
 
-        // Get current timestamp
-        time:Utc currentTime = time:utcNow();
-        string createdAt = time:utcToString(currentTime);
+        // Assign a unique ID
+        newBook.id = bookIdCounter;
+        bookIdCounter += 1;
 
-        // Create order
-        Order newOrder = {
-            orderId: orderId,
-            customerName: createRequest.customerName,
-            items: createRequest.items,
-            totalAmount: totalAmount,
-            status: "PENDING",
-            createdAt: createdAt
+        // Add book to repository
+        bookRepository.push(newBook);
+
+        return <http:Created>{
+            body: newBook,
+            headers: {"Location": string `/books/${newBook.id}`}
         };
-
-        // Store order
-        orderStorage[orderId] = newOrder;
-
-        return newOrder;
     }
 
-    // Get all orders
-    resource function get orders() returns Order[] {
-        return orderStorage.toArray();
+    // Get all books
+    resource function get books() returns Book[] {
+        return bookRepository;
     }
 
-    // Get specific order by ID
-    resource function get orders/[string orderId]() returns Order|ErrorResponse|http:NotFound {
-        if orderStorage.hasKey(orderId) {
-            Order retrievedOrder = orderStorage.get(orderId);
-            return retrievedOrder;
-        } else {
-            return http:NOT_FOUND;
-        }
-    }
+    // Get a specific book by ID
+    resource function get books/[int bookId]() returns Book|http:NotFound {
+        Book? foundBook = bookRepository.find(book => book.id == bookId);
 
-    // Update an existing order
-    resource function put orders/[string orderId](UpdateOrderRequest updateRequest) returns Order|ErrorResponse|http:NotFound {
-        if !orderStorage.hasKey(orderId) {
-            return http:NOT_FOUND;
+        if foundBook is Book {
+            return foundBook;
         }
 
-        Order existingOrder = orderStorage.get(orderId);
+        return <http:NotFound>{
+            body: string `Book with ID ${bookId} not found`
+        };
+    }
 
-        // Update fields if provided
-        string customerName = updateRequest.customerName ?: existingOrder.customerName;
-        OrderItem[] items = updateRequest.items ?: existingOrder.items;
-        string status = updateRequest.status ?: existingOrder.status;
+    // Update a book
+    resource function put books/[int bookId](@http:Payload Book updatedBook) returns Book|http:NotFound|http:BadRequest {
+        int? bookIndex = bookRepository.indexOf(book => book.id == bookId);
 
-        // Recalculate total if items changed
-        decimal totalAmount = existingOrder.totalAmount;
-        if updateRequest.items != () {
-            totalAmount = 0;
-            foreach OrderItem item in items {
-                totalAmount += item.quantity * item.unitPrice;
+        if bookIndex is int {
+            // Validate updated book details
+            if updatedBook.title == "" || updatedBook.author == "" || updatedBook.price <= 0 ) {
+                return {body: "Invalid book details"};
             }
+
+            // Preserve the original book ID
+            updatedBook.id = bookId;
+            bookRepository[bookIndex] = updatedBook;
+
+            return updatedBook;
         }
 
-        // Update order
-        Order updatedOrder = {
-            orderId: orderId,
-            customerName: customerName,
-            items: items,
-            totalAmount: totalAmount,
-            status: status,
-            createdAt: existingOrder.createdAt
+        return <http:NotFound>{
+            body: string `Book with ID ${bookId} not found`
         };
-
-        orderStorage[orderId] = updatedOrder;
-        return updatedOrder;
     }
 
-    // Delete an order
-    resource function delete orders/[string orderId]() returns http:Ok|http:NotFound {
-        if orderStorage.hasKey(orderId) {
-            Order removedOrder = orderStorage.remove(orderId);
-            return http:OK;
-        } else {
-            return http:NOT_FOUND;
+    // Delete a book
+    resource function delete books/[int bookId]() returns http:Ok|http:NotFound {
+        int? bookIndex = bookRepository.indexOf(book => book.id == bookId);
+
+        if bookIndex is int {
+            _ = bookRepository.remove(bookIndex);
+
+            return <http:Ok>{
+                body: string `Book with ID ${bookId} deleted successfully`
+            };
         }
-    }
 
-    // Health check endpoint
-    resource function get health() returns map<string> {
-        return {
-            "status": "UP",
-            "service": "Order Management Service"
+        return <http:NotFound>{
+            body: string `Book with ID ${bookId} not found`
         };
     }
 }

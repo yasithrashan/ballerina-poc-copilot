@@ -1,30 +1,35 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_HAIKU, ANTHROPIC_SONNET_4, getAnthropicClinet } from "../connection";
+import {
+    ANTHROPIC_SONNET_3_5,
+    ANTHROPIC_HAIKU,
+    ANTHROPIC_SONNET_4,
+    getAnthropicClinet,
+} from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
-import * as fs from 'fs';
-import type { Library } from "../libs/types";
-import { LANGLIBS } from "../libs/langlibs";
+import * as fs from "fs";
+import type { Library } from "./libs/types";
+import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { z } from 'zod';
-import * as dotenv from 'dotenv';
+import { z } from "zod";
+import * as dotenv from "dotenv";
 
 dotenv.config();
 
 const jsonPath = process.env.API_DOC_JSON;
 if (!jsonPath) {
-  throw new Error("Missing environment variable: API_DOC_JSON");
+    throw new Error("Missing environment variable: API_DOC_JSON");
 }
 
-const API_DOC = JSON.parse(
-  fs.readFileSync(jsonPath, "utf-8")
-) as Library;
+const API_DOC = JSON.parse(fs.readFileSync(jsonPath, "utf-8")) as Library;
 
 const LANG_LIB = LANGLIBS as Library[];
 
 // Load bal.md file from environment variable
 const balMdPath = process.env.BAL_MD_PATH;
 if (!balMdPath) {
-    console.error("[ERROR] BAL_MD_PATH environment variable is not set. Please set it in your .env file or environment.");
+    console.error(
+        "[ERROR] BAL_MD_PATH environment variable is not set. Please set it in your .env file or environment."
+    );
     process.exit(1);
 }
 
@@ -40,86 +45,200 @@ if (!balMdContent.length) {
     process.exit(1);
 }
 
-async function generateBallerinaCode(userQuery: string, API_DOC: Library[]): Promise<{ text: string, usage?: any }> {
-
-    const systemPrompt = getSystemPromptPrefix(API_DOC) + "\n\n" + getSystemPromptSuffix(LANG_LIB) + "\n\n" +
+async function generateBallerinaCode(
+    userQuery: string,
+    API_DOC: Library[]
+): Promise<{ text: string; usage?: any }> {
+    const systemPrompt =
+        getSystemPromptPrefix(API_DOC) +
+        "\n\n" +
+        getSystemPromptSuffix(LANG_LIB) +
+        "\n\n" +
         getSystemPromptBalMd(balMdContent);
 
     const { text, usage } = await generateText({
-        model: anthropic(getAnthropicClinet(ANTHROPIC_SONNET_4)),
+        model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
             {
-                role: 'system',
-                content: systemPrompt
+                role: "system",
+                content: systemPrompt,
             },
             {
-                role: 'user',
-                content: userQuery
-            }
+                role: "user",
+                content: userQuery,
+            },
         ],
-        tools: { queryAST },
-        stopWhen: stepCountIs(25),
+        tools: { getASTContext },
+        stopWhen: stepCountIs(50),
+        maxOutputTokens: 8192,
     });
     return { text, usage };
 }
 
-const queryAST = tool({
-    name: 'QueryAST',
-    description: 'Fetch full AST nodes for Ballerina symbols and return their content for LLM code generation.',
+export const getASTContext = tool({
+    name: "getASTContext",
+    description:
+        "Fetches a complete contextual slice of the AST for given symbols, including their definitions, dependencies, reverse dependencies, related endpoints, entities, and metadata.",
     inputSchema: z.object({
         symbols: z
             .array(z.string())
-            .describe('Array of Ballerina symbols (functions, types, clients, imports, exports, variables) to fetch from the AST.'),
+            .describe(
+                "An array of Ballerina symbols (functions, types, etc.) to fetch from the AST."
+            ),
     }),
     execute: async ({ symbols }) => {
         const astPath = process.env.AST_JSON_PATH;
         if (!astPath) {
-            return { error: 'AST_JSON_PATH environment variable is not set' };
+            return { error: "AST_JSON_PATH environment variable is not set" };
         }
-
         if (!fs.existsSync(astPath)) {
             return { error: `AST file not found at path: ${astPath}` };
         }
 
-        const astContent = JSON.parse(fs.readFileSync(astPath, 'utf-8'));
-        const matchedNodes: Record<string, any>[] = [];
+        const astContent = JSON.parse(fs.readFileSync(astPath, "utf-8"));
 
-        function matchNode(node: any) {
-            if (!node) return;
+        // Build indices for fast lookups
+        const nodeMapById = new Map<string, any>();
+        const nodesByName = new Map<string, any[]>();
+        const relationships = astContent.dependency_graph?.relationships || {};
+        const endpoints = astContent.dependency_graph?.endpoints || {};
 
-            if (node.name) {
-                for (const symbol of symbols) {
-                    if (node.name === symbol || node.name.includes(symbol)) {
-                        // Return full node content
-                        matchedNodes.push({
-                            symbol,
-                            nodeContent: node
-                        });
+        const indexNode = (node: any) => {
+            if (!node || typeof node !== "object") return;
+            if (node.id) nodeMapById.set(node.id, node);
+            if (node.name && typeof node.name === "string") {
+                if (!nodesByName.has(node.name)) nodesByName.set(node.name, []);
+                nodesByName.get(node.name)!.push(node);
+            }
+            for (const key in node) {
+                const value = node[key];
+                if (Array.isArray(value)) value.forEach(indexNode);
+                else if (typeof value === "object") indexNode(value);
+            }
+        };
+        if (astContent.modules) {
+            astContent.modules.forEach((mod: any) => indexNode(mod));
+        }
+
+        // Initial nodes for the given symbols
+        const initialNodeIds = new Set<string>();
+        for (const symbol of symbols) {
+            if (nodesByName.has(symbol)) {
+                nodesByName.get(symbol)!.forEach(node => {
+                    if (node.id) initialNodeIds.add(node.id);
+                });
+            }
+        }
+
+        // Dependency resolution (forward + reverse)
+        const contextIds = new Set<string>(initialNodeIds);
+        const worklist = [...initialNodeIds];
+
+        const findDependenciesInNode = (node: any) => {
+            if (!node || typeof node !== "object") return;
+            const dependencyKeys = ['resolvesTo', 'typeResolvesTo'];
+            for (const key of dependencyKeys) {
+                if (node[key] && typeof node[key] === 'string') {
+                    const depId = node[key];
+                    if (!contextIds.has(depId)) {
+                        contextIds.add(depId);
+                        worklist.push(depId);
                     }
                 }
             }
+            for (const key in node) {
+                const value = node[key];
+                if (Array.isArray(value)) value.forEach(findDependenciesInNode);
+                else if (typeof value === "object") findDependenciesInNode(value);
+            }
+        };
 
-            // Recursively check nested arrays
-            const nestedKeys = ['statements', 'resources', 'exports', 'imports', 'parameters', 'properties'];
-            for (const key of nestedKeys) {
-                if (node[key] && Array.isArray(node[key])) {
-                    node[key].forEach((child: any) => matchNode(child));
+        // Reverse dependencies
+        const findReverseDependencies = (targetIds: Set<string>) => {
+            const reverseMatches: string[] = [];
+            for (const [id, node] of nodeMapById.entries()) {
+                let found = false;
+                const scanNode = (obj: any) => {
+                    if (!obj || typeof obj !== "object" || found) return;
+                    for (const key in obj) {
+                        const val = obj[key];
+                        if (typeof val === "string" && targetIds.has(val)) {
+                            reverseMatches.push(id);
+                            found = true;
+                            break;
+                        } else if (Array.isArray(val)) val.forEach(scanNode);
+                        else if (typeof val === "object") scanNode(val);
+                    }
+                };
+                scanNode(node);
+            }
+            return reverseMatches;
+        };
+
+        while (worklist.length > 0) {
+            const currentId = worklist.shift()!;
+            const currentNode = nodeMapById.get(currentId);
+            if (currentNode) findDependenciesInNode(currentNode);
+        }
+
+        const reverseDeps = findReverseDependencies(initialNodeIds);
+        reverseDeps.forEach(id => contextIds.add(id));
+
+        // Build structured context
+        const relevantNodes = [...contextIds].map(id => nodeMapById.get(id)).filter(Boolean);
+
+        // Add additional related context from dependency_graph
+        const relatedEndpoints = symbols
+            .map(s => Object.entries(endpoints).filter(([ep, data]) => {
+                if (
+                    typeof data === "object" &&
+                    data !== null &&
+                    ("entity" in data || "operations" in data)
+                ) {
+                    const d = data as { entity?: string; operations?: string[] };
+                    return d.entity === s || d.operations?.includes(s);
                 }
+                return false;
+            }))
+            .flat();
+
+        const relatedRelationships = Object.entries(relationships)
+            .filter(([_, rel]) => {
+                const r = rel as { from?: string; to?: string };
+                return symbols.includes(r.from ?? "") || symbols.includes(r.to ?? "");
+            });
+
+        // Prepare final structured result
+        const result = {
+            symbols,
+            nodes: relevantNodes,
+            endpoints: relatedEndpoints.length ? relatedEndpoints : undefined,
+            relationships: relatedRelationships.length ? relatedRelationships : undefined,
+            metadata: {
+                source_files: astContent.project_structure?.source_files || [],
+                imports: astContent.ast?.imports || [],
+                dependencies: astContent.project_structure?.dependencies || {}
             }
+        };
+
+        // Save result to file
+        const outputDir = path.resolve("./ast-context-results");
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
         }
 
-        // Traverse all files
-        if (astContent.codebase?.files) {
-            for (const file of astContent.codebase.files) {
-                if (file.ast) matchNode(file.ast);
-            }
-        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const fileName = `ast-context-${timestamp}.txt`;
+        const filePath = path.join(outputDir, fileName);
 
-        // Return matched nodes with full content
-        console.log("TOOL CALLED......")
-        console.log(matchedNodes);
-        return { matchedNodes };
-    }
+        fs.writeFileSync(filePath, JSON.stringify(result, null, 2), "utf-8");
+
+        console.log("TOOL CALLED: getASTContext");
+        console.log(`Context saved to ${filePath}`);
+        console.log(`Found ${relevantNodes.length} nodes for symbols:`, symbols);
+
+        return { ...result, savedTo: filePath };
+    },
 });
 
 
@@ -133,7 +252,6 @@ ${balMdContent}
 Use this project summary to understand project-specific guidelines, architecture, and best practices for writing Ballerina code.
 `;
 }
-
 
 function getSystemPromptPrefix(api_docs: Library[]): string {
     return `You are an expert assistant who specializes in writing Ballerina code. Your goal is to ONLY answer Ballerina related queries. You should always answer with accurate and functional Ballerina code that addresses the specified query while adhering to the constraints of the given API documentation.
@@ -156,19 +274,15 @@ ${JSON.stringify(langlibs)}
 If the query doesn't require code examples, answer the query by utilizing the API documentation.
 If the query requires code, follow these steps to generate the Ballerina code:
 
-1. Initial Query Analysis and Project Context Loading:
-   - Load and parse the project summary (bal.md) to understand the current codebase structure
-   - Analyze the user query to determine if it's asking for new code generation, code modification, or explanation
-   - Identify if the query requires accessing existing code symbols or creating new ones
-   - The project summary (bal.md) may have issues, so be careful when modifying the code
-   - This project summary is provided for you to understand the overall project context
+1. Understand the Goal and High-Level Context
+    -First, analyze the user's query and the Project Summary (<bal_md>).
+    -Thought:What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
+    -Analysis: Use the <bal_md> content to get a high-level overview of the project summary to identify which parts of the codebase are relevant.
 
-2. AST Discovery and Symbol Resolution:
-    - Do NOT generate any existing function or type code from imagination.
-    - First, identify the relevant symbols from the project summary (bal.md).
-    - Then, use the QueryAST tool to fetch the exact code for those symbols.
-    - Only after fetching the real code, use it for better undestand the code.
-
+2. Fetch Exact Code Context with the AST Tool
+    CRITICAL: Do NOT guess or hallucinate the content of existing files, functions, or types. If the request involves modifying existing code, you MUST fetch its latest version first.
+    - Thought:Based on my goal, do I need to see the exact source code of a symbol mentioned in the query or <bal_md>?
+    - Action: Call the getASTContext tool with the list of symbols. The tool will return the ground-truth AST nodes for those symbols and all their dependencies. If the request is to create a completely new file, you can skip this tool call.
 
 3. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -249,11 +363,15 @@ async function main() {
         const userQuery = process.env.USER_QUERY;
 
         if (!userQuery || !userQuery.trim()) {
-            console.error("[ERROR] USER_QUERY environment variable is not set or empty.");
+            console.error(
+                "[ERROR] USER_QUERY environment variable is not set or empty."
+            );
             process.exit(1);
         }
 
-        const { text: response, usage } = await generateBallerinaCode(userQuery, [API_DOC]);
+        const { text: response, usage } = await generateBallerinaCode(userQuery, [
+            API_DOC,
+        ]);
 
         const outputDir = path.join(process.cwd(), "src", "ai", "poc");
         if (!fs.existsSync(outputDir)) {
@@ -270,9 +388,9 @@ async function main() {
         if (usage) {
             const usageContent = [
                 "\n\n=== Token Usage ===",
-                `Input tokens : ${usage.inputTokens || 'N/A'}`,
-                `Output tokens: ${usage.outputTokens || 'N/A'}`,
-                `Total tokens : ${usage.totalTokens || 'N/A'}`,
+                `Input tokens : ${usage.inputTokens || "N/A"}`,
+                `Output tokens: ${usage.outputTokens || "N/A"}`,
+                `Total tokens : ${usage.totalTokens || "N/A"}`,
             ].join("\n");
 
             finalContent += usageContent;
@@ -280,7 +398,6 @@ async function main() {
 
         fs.writeFileSync(outputPath, finalContent, "utf-8");
         console.log(`\nOutput with token usage saved to ${outputPath}\n`);
-
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }

@@ -1,8 +1,5 @@
 import { generateText, stepCountIs, tool } from "ai";
-import {
-    ANTHROPIC_HAIKU,
-    getAnthropicClinet,
-} from "./connection";
+import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
@@ -15,56 +12,187 @@ const jsonPath = process.env.API_DOC_JSON;
 if (!jsonPath) {
     throw new Error("Missing environment variable: API_DOC_JSON");
 }
-
-// Get the LANG_LIBS
 const API_DOC = JSON.parse(fs.readFileSync(jsonPath, "utf-8")) as Library;
 const LANG_LIB = LANGLIBS as Library[];
 
-// Load bal.md file from environment variable
+// Load bal.md file
 const balMdPath = process.env.BAL_MD_PATH;
-if (!balMdPath) {
-    console.error(
-        "[ERROR] BAL_MD_PATH environment variable is not set. Please set it in your .env file or environment."
-    );
-    process.exit(1);
-}
-
-if (!fs.existsSync(balMdPath)) {
+if (!balMdPath || !fs.existsSync(balMdPath)) {
     console.error(`[ERROR] bal.md file not found at path: ${balMdPath}`);
-    console.error("Please ensure the file exists and the path is correct.");
     process.exit(1);
 }
-
 const balMdContent = fs.readFileSync(balMdPath, "utf8");
 if (!balMdContent.length) {
     console.error(`[ERROR] bal.md is empty at path: ${balMdPath}`);
     process.exit(1);
 }
 
+const projectPath = process.env.PROJECT_PATH;
+if (!projectPath) {
+    console.error("[ERROR] PROJECT_PATH environment variable is not set.");
+    process.exit(1);
+}
+
+// LLM-based content extraction function
+async function extractRelevantContentWithLLM(
+    fileContent: string,
+    fileName: string,
+    symbols: string[]
+): Promise<string | undefined> {
+    const systemPrompt = `You are a Ballerina code analyzer. Your task is to extract the relevent context from Ballerina source files.
+
+CRITICAL INSTRUCTIONS:
+1. Extract ONLY the exact relevent code - be very precise
+2. If the relevent code not include try to get similar or related code but related to given symbols
+3. Only return complete, syntactically correct code segments for the requested symbols
+4. Include necessary imports only if they are directly used by the extracted symbols
+
+Return the extracted content in this format:
+### File: ${fileName}
+
+[Only if there are relevant imports for the extracted symbols]
+#### Imports
+\`\`\`ballerina
+[only imports used by extracted symbols]
+\`\`\`
+
+[Only for each requested symbol that exists in the file]
+#### [Symbol Type]: [exact symbol name]
+\`\`\`ballerina
+[complete symbol definition]
+\`\`\`
+
+IMPORTANT:
+- If no requested symbols are found, return "No matching symbols found in this file"
+- Be very strict about matching - only extract what was specifically requested
+- Do not add extra functions, types, or code that wasn't asked for`;
+
+    const userQuery = symbols.length > 0
+        ? `Extract ONLY these specific symbols from the Ballerina code: ${symbols.join(', ')}\n\nBe very precise - only extract the exact symbols requested, nothing else.\n\nFile: ${fileName}\n\nCode:\n${fileContent}`
+        : `Extract all major code elements from this Ballerina file.\n\nFile: ${fileName}\n\nCode:\n${fileContent}`;
+
+    try {
+        const { text } = await generateText({
+            model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userQuery },
+            ],
+            maxOutputTokens: 4096,
+        });
+
+        return text;
+    } catch (error) {
+        console.error(`[ERROR] LLM extraction failed for ${fileName}:`, error);
+    }
+}
+
+export const tools = {
+    extractRelevantContentWithLLM: tool({
+        description:
+            "Reads all Ballerina source files in the project and uses the LLM to extract only relevant symbols. Saves result to code-extract folder.",
+        inputSchema: z.object({
+            symbols: z
+                .array(z.string())
+                .describe(
+                    "List of symbols/keywords and contexts or identifiers to search for relevent contexts."
+                ),
+        }),
+        execute: async ({ symbols }) => {
+            try {
+                console.log(`[DEBUG] Tool called with symbols: ${JSON.stringify(symbols)}`);
+                console.log(`[DEBUG] PROJECT_PATH: ${projectPath}`);
+
+                // Verify project path exists
+                if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
+                    const error = `Invalid PROJECT_PATH: ${projectPath}`;
+                    console.error(`[ERROR] ${error}`);
+                    return error;
+                }
+
+                // Collect all .bal files
+                let files: string[] = [];
+                try {
+                    files = fs.readdirSync(projectPath).filter((f) => f.endsWith(".bal"));
+                } catch (err) {
+                    const errorMsg = `Failed to read project directory: ${err}`;
+                    console.error(`[ERROR] ${errorMsg}`);
+                    return errorMsg;
+                }
+
+                if (files.length === 0) {
+                    return `No .bal files found in project: ${projectPath}`;
+                }
+
+                let mdResult = "";
+                let processedFiles = 0;
+
+                for (const file of files) {
+                    const fullPath = path.join(projectPath, file);
+                    console.log(`[DEBUG] Processing file: ${fullPath}`);
+
+                    if (!fs.existsSync(fullPath)) {
+                        console.warn(`[WARN] File not found: ${fullPath}`);
+                        continue;
+                    }
+
+                    const content = fs.readFileSync(fullPath, "utf-8");
+                    if (!content.trim()) {
+                        console.log(`[INFO] File ${file} is empty, skipping`);
+                        continue;
+                    }
+
+                    // ⚠️ No keyword filtering — always send to LLM
+                    processedFiles++;
+                    const fileMd = await extractRelevantContentWithLLM(content, file, symbols);
+                    if (fileMd) {
+                        mdResult += fileMd + "\n\n";
+                    }
+                }
+
+                console.log(`[DEBUG] Processed ${processedFiles} files`);
+
+                if (!mdResult.trim()) {
+                    const message = `No matching symbols found by LLM in ${files.length} files. Symbols searched: ${symbols.join(", ") || "all"}`;
+                    const emptyResultMd = `# Code Extract Report - No Results\n\n${message}`;
+                    const savedFilePath = saveMarkdownToFile(emptyResultMd, symbols);
+                    return `${message}\n\nReport saved to: ${savedFilePath}`;
+                }
+
+                // Save result
+                const finalMd = `# Code Extract Report\n\n**Symbols searched:** ${symbols.join(", ") || "all symbols"
+                    }\n**Files processed:** ${processedFiles}\n**Generated:** ${new Date().toISOString()}\n\n---\n\n${mdResult}`;
+
+                const savedFilePath = saveMarkdownToFile(finalMd, symbols);
+                return `${mdResult}\n\n---\n**Report saved to:** \`${savedFilePath}\``;
+            } catch (error) {
+                const errMsg = `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`;
+                console.error(`[ERROR] ${errMsg}`);
+                return errMsg;
+            }
+        },
+    }),
+};
+
+
+// Generate Ballerina code function (unchanged)
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
 ): Promise<{ text: string; usage?: any }> {
-    // Build complete system prompt
     const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
     const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
     const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + getSystemPromptBalMd(balMdContent);
 
-    console.log("=== Generating Ballerina Code ===");
+    console.log("Generating Code Agentic...");
 
     const { text, usage } = await generateText({
         model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
-            {
-                role: "system",
-                content: systemPrompt,
-            },
-            {
-                role: "user",
-                content: userQuery,
-            },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userQuery },
         ],
-        tools: { getASTContext },
+        tools: tools,
         stopWhen: stepCountIs(25),
         maxOutputTokens: 8192,
     });
@@ -72,33 +200,7 @@ async function generateBallerinaCode(
     return { text, usage };
 }
 
-export const getASTContext = tool({
-    name: "getASTContext",
-    description:
-        "Fetches a complete contextual slice of the AST for given symbols, including their definitions, dependencies, reverse dependencies, related endpoints, entities, and metadata.",
-    inputSchema: z.object({
-        symbols: z
-            .array(z.string())
-            .describe(
-                "An array of Ballerina symbols (functions, types, variables, resources, etc.) OR file names to fetch from the AST."
-            ),
-    }),
-    execute: async ({ symbols }) => {
-        const astPath = process.env.AST_JSON_PATH;
-        if (!astPath) {
-            return { error: "AST_JSON_PATH environment variable is not set" };
-        }
-        if (!fs.existsSync(astPath)) {
-            return { error: `AST file not found at path: ${astPath}` };
-        }
-
-        const astContent = JSON.parse(fs.readFileSync(astPath, "utf-8"));
-
-
-        return { symbols, nodes: astContent };
-    },
-});
-
+// Helper functions (unchanged)
 function getSystemPromptBalMd(balMdContent: string): string {
     return `
 3. Project Summary (bal.md)
@@ -113,7 +215,7 @@ Use this project summary to understand project-specific guidelines, architecture
 function getSystemPromptPrefix(api_docs: Library[]): string {
     return `You are an expert assistant who specializes in writing Ballerina code. Your goal is to ONLY answer Ballerina related queries. You should always answer with accurate and functional Ballerina code that addresses the specified query while adhering to the constraints of the given API documentation.
 
-You will be provided with following inputs:
+You will be provided with the following inputs:
 
 1. API_DOCS: A JSON string containing the API documentation for various Ballerina libraries and their functions, types, and clients.
 <api_docs>
@@ -132,16 +234,17 @@ If the query doesn't require code examples, answer the query by utilizing the AP
 If the query requires code, follow these steps to generate the Ballerina code:
 
 1. Understand the Goal and High-Level Context
-    -First, analyze the user's query and the Project Summary (<bal_md>).
-    -Thought:What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
-    -Analysis: Use the <bal_md> content to get a high-level overview of the project summary to identify which parts of the codebase are relevant.
-    - When you get the relevent code try to do not missed any context.This is the heart of the
-    - If you can get the idea about only using bal.md you can skip the tool
+    - First, analyze the user's query and the Project Summary carefully (<bal_md>).
+    - Thought: What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
+    - Analysis: Use the <bal_md> content to get a high-level summary of the project and identify which parts of the codebase are relevant to the query.
 
-2. Fetch Exact Code Context with the AST Tool
-
-    - Thought:Based on my goal, do I need to see the exact source code of a symbol mentioned in the query or <bal_md>? if not skip the tool try to skil calling tool.
-    - Action: Call the getASTContext tool with the list of symbols. The tool will return the ground-truth AST nodes for those symbols and all their dependencies. If the request is to create a completely new file, you can skip this tool call.
+2. Extract Exact Code Context with the extractRelevantContentWithLLM tool
+    - Thought: Based on my goal, do I need to see the exact source code of a symbols/keywords mentioned in the query or <bal_md>?
+    - Thought: To provide accurate results for modifications or bug fixes, I must see the actual implementation using extractRelevantContentWithLLM.
+    - Thought: If I don't have the actual implementation for relevant code, I have a higher chance of missing details or giving incorrect guidance.
+    - Rule: Do not guess the code. If the query involves modifying existing code, always call the tool to get the actual code.
+    - Action: Call the extractRelevantContentWithLLM tool with a list of relevant symbols/keywords and related context. The tool will search the project directory for .bal files, extract relevant code segments using LLM analysis, and return structured markdown.
+    - Exception: If the user query is about generating something from scratch (new feature, documentation, or conceptual explanation), you can ignore the tool.
 
 3. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -205,7 +308,7 @@ Important reminders:
 Begin your response with the explanation, once the entire explanation is finished only, include codeblock segments(if any) in the end of the response.
 Also can you mention why you call or not call the tool
 If you feel like the given api docs are not enough for complete user user task, add this also.
-Its better to print the feedback in the below of your response
+Its better to print the feedback in the below of your response also include why you use , not use the tool
 The explanation should explain the control flow along with the selected libraries and their functions.
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
@@ -219,34 +322,27 @@ Example Codeblock segment:
 `;
 }
 
+// Main execution (unchanged)
 async function main() {
     try {
         const userQuery = process.env.USER_QUERY;
-
         if (!userQuery || !userQuery.trim()) {
-            console.error(
-                "[ERROR] USER_QUERY environment variable is not set or empty."
-            );
+            console.error("[ERROR] USER_QUERY environment variable is not set or empty.");
             process.exit(1);
         }
 
-        const { text: response } = await generateBallerinaCode(userQuery, [
-            API_DOC,
-        ]);
+        const { text: response } = await generateBallerinaCode(userQuery, [API_DOC]);
 
         const outputDir = path.join(process.cwd(), "poc");
-        if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-        }
+        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
         const now = new Date();
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        let finalContent = `=== USER QUERY ===\n${userQuery}\n\n=== RESPONSE ===\n${response}`;
-
+        const finalContent = `=== USER QUERY ===\n${userQuery}\n\n=== RESPONSE ===\n${response}`;
         fs.writeFileSync(outputPath, finalContent, "utf-8");
-        console.log(`\nOutput saved to ${outputPath}\n`);
+        console.log(`\nMain execution output saved to ${outputPath}\n`);
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }
@@ -255,3 +351,17 @@ async function main() {
 main();
 
 export { generateBallerinaCode };
+
+function saveMarkdownToFile(mdResult: string, symbols: string[]): string {
+    const outputDir = path.join(process.cwd(), "code-extract");
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+    }
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, "-");
+    const symbolsPart = symbols.length > 0 ? symbols.join("_") : "all";
+    const filename = `code_extract_${symbolsPart}_${timestamp}.md`;
+    const filePath = path.join(outputDir, filename);
+    fs.writeFileSync(filePath, mdResult, "utf-8");
+    return filePath;
+}

@@ -179,7 +179,7 @@ export const tools = {
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
-): Promise<{ text: string; usage?: any }> {
+): Promise<{ text: string; tokenSummary: any }> {
     const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
     const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
     const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + getSystemPromptBalMd(balMdContent);
@@ -197,8 +197,18 @@ async function generateBallerinaCode(
         maxOutputTokens: 8192,
     });
 
-    return { text, usage };
+    // Only keep relevant token info
+    const tokenSummary = {
+        inputTokens: usage?.inputTokens ?? 0,
+        outputTokens: usage?.outputTokens ?? 0,
+        totalTokens:
+            (usage?.inputTokens ?? 0) +
+            (usage?.outputTokens ?? 0),
+    };
+
+    return { text, tokenSummary };
 }
+
 
 // Helper functions (unchanged)
 function getSystemPromptBalMd(balMdContent: string): string {
@@ -322,7 +332,7 @@ Example Codeblock segment:
 `;
 }
 
-// Main execution (unchanged)
+// Main execution
 async function main() {
     try {
         const userQuery = process.env.USER_QUERY;
@@ -331,22 +341,42 @@ async function main() {
             process.exit(1);
         }
 
-        const { text: response } = await generateBallerinaCode(userQuery, [API_DOC]);
+        // Run the code generator
+        const { text: response, tokenSummary } = await generateBallerinaCode(userQuery, [API_DOC]);
 
+        // Ensure output directory
         const outputDir = path.join(process.cwd(), "poc");
-        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
 
+        // Timestamp for filename
         const now = new Date();
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        const finalContent = `=== USER QUERY ===\n${userQuery}\n\n=== RESPONSE ===\n${response}`;
+        // Final content with response + token usage
+        const finalContent = `=== USER QUERY ===
+${userQuery}
+
+=== RESPONSE ===
+${response}
+
+=== TOKEN USAGE ===
+Input Tokens: ${tokenSummary.inputTokens}
+Output Tokens: ${tokenSummary.outputTokens}
+Tool Call Tokens: ${tokenSummary.toolCallTokens}
+Total Counted Tokens: ${tokenSummary.totalTokens}
+`;
+
+        // Save everything into one txt file
         fs.writeFileSync(outputPath, finalContent, "utf-8");
-        console.log(`\nMain execution output saved to ${outputPath}\n`);
+        console.log(`\nMain execution output (including token usage) saved to ${outputPath}\n`);
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }
 }
+
 
 main();
 

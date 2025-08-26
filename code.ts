@@ -1,8 +1,6 @@
 import { generateText, stepCountIs, tool } from "ai";
 import {
-    ANTHROPIC_SONNET_3_5,
     ANTHROPIC_HAIKU,
-    ANTHROPIC_SONNET_4,
     getAnthropicClinet,
 } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
@@ -29,11 +27,13 @@ interface RealTokenBreakdown {
     tokenMeasurementCalls: number;
 }
 
+// Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
 if (!jsonPath) {
     throw new Error("Missing environment variable: API_DOC_JSON");
 }
 
+// Get the LANG_L
 const API_DOC = JSON.parse(fs.readFileSync(jsonPath, "utf-8")) as Library;
 const LANG_LIB = LANGLIBS as Library[];
 

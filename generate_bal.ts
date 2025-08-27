@@ -3,9 +3,8 @@ import { anthropic } from '@ai-sdk/anthropic';
 import * as fs from 'fs';
 import path from 'path';
 
-interface BalChunks {
-    file: string;
-    chunkIndex: number;
+interface BalFile {
+    filePath: string;
     content: string;
 }
 
@@ -19,79 +18,47 @@ function getAllBalFiles(dirpath: string, fileList: string[] = []): string[] {
         if (stat.isDirectory()) {
             getAllBalFiles(filePath, fileList);
         } else if (file.endsWith('.bal')) {
-            fileList.push(filePath)
+            fileList.push(filePath);
         }
     });
 
-    console.log(fileList)
+    console.log(fileList);
     return fileList;
 }
 
-function chunkText(text: string, chunkSize: number = 1000): string[] {
-    const chunks: string[] = [];
-
-    let start = 0;
-
-    while (start < text.length) {
-        const end = start + chunkSize;
-        chunks.push(text.slice(start, end));
-        start = end;
-    }
-    return chunks;
+function readBalFiles(filePaths: string[]): BalFile[] {
+    return filePaths.map((filePath) => ({
+        filePath,
+        content: fs.readFileSync(filePath, 'utf-8')
+    }));
 }
 
-function readAndChunksFiles(filePaths: string[]) {
-    const allChunks: { file: string; chunkIndex: number; content: string }[] = [];
-
-    filePaths.forEach((filePath) => {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const chunks = chunkText(content);
-
-        chunks.forEach((chunk, index) => {
-            allChunks.push({
-                file: filePath,
-                chunkIndex: index,
-                content: chunk,
-            });
-        });
-    });
-
-    console.log(allChunks);
-    return allChunks;
-}
-
-
-interface BalChunks {
-    file: string;
-    chunkIndex: number;
-    content: string;
-}
-
-export async function generateBalMd(fileChunks: BalChunks[]) {
+export async function generateBalMd(balFiles: BalFile[]) {
     const systemPrompt = `
-You are an expert Ballerina developer and technical writer. Your task is to generate a clear, well-structured Markdown summary of a Ballerina project (bal.md) based on the project file contents provided as chunks.
+You are an expert Ballerina developer and technical writer. Your task is to generate a clear, well-structured Markdown summary of a Ballerina project (bal.md) based on the project file contents provided.
 
-Each chunk has this structure:
-- file: string – the file name
-- chunkIndex: number – the index of this chunk in the file
-- content: string – the content of the chunk
+Each file has this structure:
+- filePath: string – the file path
+- content: string – the complete file content
 
 Instructions:
 
 Rule: Use only **actual code symbols and keywords**. Include doc comments and inline comments from the code, correcting grammar and spelling as needed.
       Be **minimal**: include only relevant sections and information; do not add extra explanations.
 
-1. Reconstruct the project files from the chunks.
-2. Analyze the code and determine the logical structure:
+1. Analyze the code and determine the logical structure:
 - Project files and their purposes
 - Imports used in each file
 - Global variables, in-memory maps, constants, or any other data structures
 - Services, listeners, and endpoints
 - Resource functions with methods, paths, descriptions, responses, and validations
 - Record types, enums, and any custom types
-3. Generate a Markdown summary that reflects the actual project structure. Use headings, subheadings, bullet points, and code blocks as appropriate.
-4. Only include sections relevant to the project; omit sections that don’t exist.
-5. Be concise, accurate, and structured in a way that a developer can understand the entire project at a glance.
+
+2. Generate a Markdown summary that reflects the actual project structure. Use headings, subheadings, bullet points, and code blocks as appropriate.
+
+3. Only include sections relevant to the project; omit sections that don't exist.
+
+4. Be concise, accurate, and structured in a way that a developer can understand the entire project at a glance.
 
 The output should look professional and follow this style (dynamic, based on the actual project, not hardcoded):
 
@@ -122,7 +89,7 @@ The output should look professional and follow this style (dynamic, based on the
         model: anthropic('claude-3-5-haiku-20241022'),
         messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: JSON.stringify(fileChunks) }
+            { role: 'user', content: JSON.stringify(balFiles, null, 2) }
         ]
     });
 
@@ -144,10 +111,11 @@ The output should look professional and follow this style (dynamic, based on the
     return filePath;
 }
 
+const projectPath = process.env.BAL_PROJECT_PATH;
+if (!projectPath) {
+    throw new Error("Environment variable BAL_PROJECT_PATH is not set.");
+}
 
-
-
-const projectPath = "tests/ballerina";
-const balFiles = getAllBalFiles(projectPath);
-const fileChunks = readAndChunksFiles(balFiles);
-generateBalMd(fileChunks)
+const balFilePaths = getAllBalFiles(projectPath);
+const balFiles = readBalFiles(balFilePaths);
+generateBalMd(balFiles);

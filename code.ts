@@ -5,7 +5,7 @@ import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { z } from "zod";
+import { symbol, z } from "zod";
 
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
@@ -34,7 +34,7 @@ if (!projectPath) {
 }
 
 // LLM-based content extraction function
-async function extractRelevantContentWithLLM(
+async function extractRelevantContent(
     fileContent: string,
     fileName: string,
     symbols: string[]
@@ -88,19 +88,42 @@ IMPORTANT:
 }
 
 export const tools = {
-    extractRelevantContentWithLLM: tool({
+    extractRelevantContent: tool({
         description:
             "Reads all Ballerina source files in the project and uses the LLM to extract only relevant symbols. Saves result to code-extract folder.",
         inputSchema: z.object({
-            symbols: z
-                .array(z.string())
-                .describe(
-                    "List of symbols/keywords and contexts or identifiers to search for relevent contexts."
-                ),
+            filename: z.string().optional().describe("Target filename to process"),
+            imports: z.array(z.string()).optional().describe("Import statements to search for"),
+            configurableLevelVariables: z.array(z.string()).optional().describe("Configurable level variables to search for"),
+            moduleLevelVariable: z.array(z.string()).optional().describe("Module level variables to search for"),
+            types: z.array(z.string()).optional().describe("Type definitions to search for"),
+            functions: z.array(z.string()).optional().describe("Function definitions to search for"),
+            services: z.array(z.string()).optional().describe("Service definitions to search for"),
+            resources: z.array(z.string()).optional().describe("Resource definitions to search for"),
         }),
-        execute: async ({ symbols }) => {
+        execute: async ({
+            filename,
+            imports,
+            configurableLevelVariables,
+            moduleLevelVariable,
+            types,
+            functions,
+            services,
+            resources
+        }) => {
             try {
-                console.log(`[DEBUG] Tool called with symbols: ${JSON.stringify(symbols)}`);
+                const searchCriteria = {
+                    filename,
+                    imports,
+                    configurableLevelVariables,
+                    moduleLevelVariable,
+                    types,
+                    functions,
+                    services,
+                    resources
+                };
+
+                console.log(`[DEBUG] Tool called with search criteria: ${JSON.stringify(searchCriteria)}`);
                 console.log(`[DEBUG] PROJECT_PATH: ${projectPath}`);
 
                 // Verify project path exists
@@ -124,6 +147,14 @@ export const tools = {
                     return `No .bal files found in project: ${projectPath}`;
                 }
 
+                // Filter files if filename is specified
+                if (filename) {
+                    files = files.filter(f => f === filename || f.includes(filename));
+                    if (files.length === 0) {
+                        return `No files matching '${filename}' found in project: ${projectPath}`;
+                    }
+                }
+
                 let mdResult = "";
                 let processedFiles = 0;
 
@@ -142,9 +173,18 @@ export const tools = {
                         continue;
                     }
 
-                    // ⚠️ No keyword filtering — always send to LLM
+                    // Pass the relevant symbol names to LLM
                     processedFiles++;
-                    const fileMd = await extractRelevantContentWithLLM(content, file, symbols);
+                    const symbols: string[] = [
+                        ...(imports ?? []),
+                        ...(configurableLevelVariables ?? []),
+                        ...(moduleLevelVariable ?? []),
+                        ...(types ?? []),
+                        ...(functions ?? []),
+                        ...(services ?? []),
+                        ...(resources ?? [])
+                    ];
+                    const fileMd = await extractRelevantContent(content, file, symbols);
                     if (fileMd) {
                         mdResult += fileMd + "\n\n";
                     }
@@ -152,18 +192,23 @@ export const tools = {
 
                 console.log(`[DEBUG] Processed ${processedFiles} files`);
 
+                // Convert searchCriteria to string[] for saveMarkdownToFile
+                const criteriaTags: string[] = Object.entries(searchCriteria)
+                    .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
+                    .map(([key, value]) => `${key}:${Array.isArray(value) ? value.join(",") : value}`);
+
                 if (!mdResult.trim()) {
-                    const message = `No matching symbols found by LLM in ${files.length} files. Symbols searched: ${symbols.join(", ") || "all"}`;
+                    const message = `No matching content found by LLM in ${files.length} files. Search criteria: ${criteriaTags.join("; ") || "all"}`;
                     const emptyResultMd = `# Code Extract Report - No Results\n\n${message}`;
-                    const savedFilePath = saveMarkdownToFile(emptyResultMd, symbols);
+                    const savedFilePath = saveMarkdownToFile(emptyResultMd, criteriaTags);
                     return `${message}\n\nReport saved to: ${savedFilePath}`;
                 }
 
                 // Save result
-                const finalMd = `# Code Extract Report\n\n**Symbols searched:** ${symbols.join(", ") || "all symbols"
+                const finalMd = `# Code Extract Report\n\n**Search criteria:** ${criteriaTags.join("; ") || "all content"
                     }\n**Files processed:** ${processedFiles}\n**Generated:** ${new Date().toISOString()}\n\n---\n\n${mdResult}`;
 
-                const savedFilePath = saveMarkdownToFile(finalMd, symbols);
+                const savedFilePath = saveMarkdownToFile(finalMd, criteriaTags);
                 return `${mdResult}\n\n---\n**Report saved to:** \`${savedFilePath}\``;
             } catch (error) {
                 const errMsg = `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -173,6 +218,7 @@ export const tools = {
         },
     }),
 };
+
 
 
 // Generate Ballerina code function (unchanged)
@@ -248,12 +294,12 @@ If the query requires code, follow these steps to generate the Ballerina code:
     - Thought: What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
     - Analysis: Use the <bal_md> content to get a high-level summary of the project and identify which parts of the codebase are relevant to the query.
 
-2. Extract Exact Code Context with the extractRelevantContentWithLLM tool
+2. Extract Exact Code Context with the extractRelevantContent tool
     - Thought: Based on my goal, do I need to see the exact source code of a symbols/keywords mentioned in the query or <bal_md>?
-    - Thought: To provide accurate results for modifications or bug fixes, I must see the actual implementation using extractRelevantContentWithLLM.
+    - Thought: To provide accurate results for modifications or bug fixes, I must see the actual implementation using extractRelevantContent.
     - Thought: If I don't have the actual implementation for relevant code, I have a higher chance of missing details or giving incorrect guidance.
     - Rule: Do not guess the code. If the query involves modifying existing code, always call the tool to get the actual code.
-    - Action: Call the extractRelevantContentWithLLM tool with a list of relevant symbols/keywords and related context. The tool will search the project directory for .bal files, extract relevant code segments using LLM analysis, and return structured markdown.
+    - Action: Call the extractRelevantContent tool with a list of relevant symbols/keywords and related context. The tool will search the project directory for .bal files, extract relevant code segments using LLM analysis, and return structured markdown.
     - Exception: If the user query is about generating something from scratch (new feature, documentation, or conceptual explanation), you can ignore the tool.
 
 3. Carefully analyze the provided API documentation:

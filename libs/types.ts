@@ -120,3 +120,13 @@ export interface Library {
     functions?: RemoteFunction[];
     services?: Service[];
 }
+
+// export interface searchCriteria{
+//     filename,
+//     imports,
+//     configurableLevelVariables,
+//     types,
+//     functions,
+//             ervices,
+//                     resources
+// }

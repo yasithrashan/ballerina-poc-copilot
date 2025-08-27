@@ -5,7 +5,7 @@ import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { symbol, z } from "zod";
+import { z } from "zod";
 
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;

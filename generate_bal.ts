@@ -62,26 +62,31 @@ Rule: Use only **actual code symbols and keywords**. Include doc comments and in
 
 The output should look professional and follow this style (dynamic, based on the actual project, not hardcoded):
 
-# {Project Name} - Project Structure
+### **Output Structure**
+For each file, follow this exact structure:
 
-## Project Files
-- List files and their purpose
+## {filename}
 
-## Imports
-- List imports used in the project
+### Imports
+- {import statements or "None"}
 
-## Global Variables / Data Structures
-- List relevant variables, maps, or constants
+### Configurable Level Variables
+- {list all configurable variables or "None"}
 
-## Services / Listeners
-- List services, listeners, and descriptions
+### Module Level Variables
+- {list all module-level variables or "None"}
 
-## Resource Functions
-- Method, path, description, responses, validations
+### Types
+- {list all record types, enums, etc. with fields or "None"}
 
-## Types
-- Record types, enums, and fields
-- Include optional fields if any
+### Functions
+- {list functions, signatures, and purpose or "None"}
+
+### Services
+- {list services and their listeners or "None"}
+
+### Resources
+- {list resource functions with method, path, purpose, responses or "None"}
 `;
 
     // Send request to the LLM

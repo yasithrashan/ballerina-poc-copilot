@@ -1,78 +1,153 @@
 # Ballerina Bookstore API Project
+## This is the project summary of of the codebase
 
-## main.bal
+## Those are the Project Files
+- `main.bal` - Main service implementation
+- `types.bal` - Type definitions
+
+---
+
+
+## File Name: main.bal
 
 ### Imports
 - `ballerina/http`
+- `ballerina/sql`
+- `ballerinax/mysql`
+
+---
+
+### Configurable Variables
+
+* **Comments/DocComments**: Database configuration
+
+- `dbHost` - string - `"localhost"`
+- `dbUser` - string - `"root"`
+- `dbPassword` - string - `""`
+- `dbName` - string - `"bookstore"`
+- `dbPort` - int - `3306`
+- `servicePort` - int - `8080`
 
 ### Module Level Variables
-- `map<Book> bookStore`
-- `map<Author> authorStore`
-- `map<Category> categoryStore`
+- `dbClient` - mysql:Client
+
+---
 
 ### Services
-- HTTP Service: `/bookstore` on port 8080
+HTTP Service: `/bookstore` on port `servicePort 8080`
 
-### Resources
-#### Books Endpoint
-- `GET /books`: Retrieve books with optional filtering
-  - Parameters: `title`, `author`, `category`, `minPrice`, `maxPrice`, `status`
-  - Returns: `BooksResponse`
+* **Comments/DocComments**: HTTP service for bookstore
 
-- `GET /books/{bookId}`: Retrieve a specific book
-  - Returns: `BookResponse` or `http:NotFound`
+---
 
-- `POST /books`: Add a new book
-  - Validates book, author, and category
-  - Returns: `http:Created` or `http:BadRequest`
+### Endpoints
 
-- `PUT /books/{bookId}`: Update an existing book
-  - Validates book, author, and category
-  - Returns: `BookResponse` or `http:NotFound`/`http:BadRequest`
+#### `bookstore/`
 
-- `DELETE /books/{bookId}`: Delete a specific book
-  - Returns: `http:NoContent` or `http:NotFound`
+* **GET /books**
+   * **Comments/DocComments**: Get all books
+   * **Parameters**: none
+   * **Returns**: `Book[]` or `ErrorResponse`
+   * **Status Codes**:
+     - `200 OK` - Successfully retrieved books
+     - `500 Internal Server Error` - Database connection or query error
 
-- `DELETE /books`: Delete all books
-  - Returns: `http:NoContent` or `http:NotFound`
+---
 
-#### Categories Endpoint
-- `GET /categories`: Retrieve all categories
-  - Returns: `CategoriesResponse`
+* **GET /books/{bookId}**
+   * **Comments/DocComments**: Get book by ID
+   * **Parameters**:
+      * **Path Parameter**:
+         * `bookId` - int - The unique identifier of the book
+   * **Returns**: `Book` or `ErrorResponse`
+   * **Status Codes**:
+     - `200 OK` - Book found and retrieved successfully
+     - `404 Not Found` - Book with specified ID does not exist
+     - `500 Internal Server Error` - Database connection or query error
 
-- `POST /categories`: Add a new category
-  - Validates category and optional parent category
-  - Returns: `http:Created` or `http:BadRequest`
+---
 
-#### Authors Endpoint
-- `GET /authors`: Retrieve all authors
-  - Returns: `AuthorsResponse`
+* **POST /books**
+   * **Comments/DocComments**: Add new book
+   * **Parameters**:
+      * **Body / Payload Parameter**:
+         * `bookRequest` - BookRequest - Book details to be created
+   * **Returns**: `Book` (created) or `ErrorResponse`
+   * **Status Codes**:
+     - `201 Created` - Book successfully created
+     - `400 Bad Request` - Invalid input data (empty fields, invalid price/quantity, duplicate ISBN)
+     - `500 Internal Server Error` - Database connection or insertion error
 
-#### Inventory Endpoint
-- `POST /inventory/bulk`: Bulk update book inventory
-  - Updates book quantity and status
-  - Returns: `BulkUpdateResponse`
+---
 
-## types.bal
+* **PUT /books/{bookId}**
+   * **Comments/DocComments**: Update book
+   * **Parameters**:
+      * **Path Parameter**:
+         * `bookId` - int - The unique identifier of the book to update
+      * **Body / Payload Parameter**:
+         * `bookRequest` - BookRequest - Updated book details
+   * **Returns**: `Book` (updated) or `ErrorResponse`
+   * **Status Codes**:
+     - `200 OK` - Book successfully updated
+     - `400 Bad Request` - Invalid input data (empty fields, invalid price/quantity, duplicate ISBN)
+     - `404 Not Found` - Book with specified ID does not exist
+     - `500 Internal Server Error` - Database connection or update error
 
-### Types
-#### Record Types
-- `Book`: Represents book details with ID, title, author, category, etc.
-- `Author`: Represents author information
-- `Category`: Represents book category with optional parent category
-- `BookSearchCriteria`: Search parameters for books
-- `BulkInventoryUpdate`: Bulk inventory update request
-- `InventoryItem`: Individual inventory update item
+---
 
-#### Response Types
-- `BookResponse`
-- `BooksResponse`
-- `CategoryResponse`
-- `CategoriesResponse`
-- `AuthorResponse`
-- `AuthorsResponse`
-- `BulkUpdateResponse`
-- `ErrorResponse`
+* **DELETE /books/{bookId}**
+   * **Comments/DocComments**: Delete book
+   * **Parameters**:
+      * **Path Parameter**:
+         * `bookId` - int - The unique identifier of the book to delete
+   * **Returns**: `http:NoContent` or `ErrorResponse`
+   * **Status Codes**:
+     - `204 No Content` - Book successfully deleted
+     - `404 Not Found` - Book with specified ID does not exist
+     - `500 Internal Server Error` - Database connection or deletion error
 
-#### Enumerations
-- `BookStatus`: `AVAILABLE`, `OUT_OF_STOCK`, `DISCONTINUED`
+---
+
+* **GET /health**
+   * **Comments/DocComments**: Health check endpoint
+   * **Parameters**: none
+   * **Returns**: `http:Ok`
+   * **Status Codes**:
+     - `200 OK` - Service is healthy and running
+
+---
+
+## File Name: types.bal
+
+### Type Definitions
+
+* **Book**
+   * **Comments/DocComments**: Book record type for database operations
+   * **Fields**:
+      * `id?` - int (optional)
+      * `title` - string
+      * `author` - string
+      * `isbn` - string
+      * `price` - decimal
+      * `quantity` - int
+
+* **BookRequest**
+   * **Comments/DocComments**: Book creation request (without id)
+   * **Fields**:
+      * `title` - string
+      * `author` - string
+      * `isbn` - string
+      * `price` - decimal
+      * `quantity` - int
+
+* **ErrorResponse**
+   * **Comments/DocComments**: Error response type
+   * **Fields**:
+      * `message` - string
+
+* **SuccessResponse**
+   * **Comments/DocComments**: Success response for operations
+   * **Fields**:
+      * `message` - string
+      * `status` - string

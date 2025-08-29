@@ -90,7 +90,7 @@ IMPORTANT:
 export const tools = {
     extractRelevantContent: tool({
         description:
-            "Reads all Ballerina source files in the project and uses the LLM to extract only relevant symbols. Saves result to code-extract folder.",
+            "Reads all Ballerina source files in the project and uses the to extract only relevant symbols. Saves result to code-extract folder.",
         inputSchema: z.object({
             filename: z.string().optional().describe("Target filename to process"),
             imports: z.array(z.string()).optional().describe("Import statements to search for"),
@@ -264,7 +264,18 @@ function getSystemPromptBalMd(balMdContent: string): string {
 ${balMdContent}
 </bal_md>
 
-Use this project summary to understand project-specific guidelines, architecture, and best practices for writing Ballerina code.
+Use this project summary to understand the high level details of the project files. for writing Ballerina code.
+This file includes:
+    Each File:
+        -imports
+        -configurableLevelVariables
+        -moduleLevelVariable
+        -types
+        -functions
+        -services
+        -resources
+        - Comments/ Doc-Comments
+Read carefully and undestand the overrall project summary
 `;
 }
 
@@ -285,6 +296,8 @@ function getSystemPromptSuffix(langlibs: Library[]): string {
 <langlibs>
 ${JSON.stringify(langlibs)}
 </langlibs>
+
+There is a tool called extractRelevantContent to get the actual code after reading the bal.md file.
 
 If the query doesn't require code examples, answer the query by utilizing the API documentation.
 If the query requires code, follow these steps to generate the Ballerina code:

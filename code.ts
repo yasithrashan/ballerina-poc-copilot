@@ -220,7 +220,6 @@ export const tools = {
 };
 
 
-
 // Generate Ballerina code function (unchanged)
 async function generateBallerinaCode(
     userQuery: string,
@@ -239,6 +238,7 @@ async function generateBallerinaCode(
             { role: "user", content: userQuery },
         ],
         tools: tools,
+        toolChoice: 'required',
         stopWhen: stepCountIs(25),
         maxOutputTokens: 8192,
     });

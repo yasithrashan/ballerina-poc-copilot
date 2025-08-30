@@ -1,0 +1,617 @@
+[
+  {
+    "name": "ballerina/http",
+    "description": "This module allows you to access the http client and server endpoints.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "The HTTP client provides the capability for initiating contact with a remote HTTP service. The API it provides includes the functions for the standard HTTP methods forwarding a received request and sending requests using custom HTTP verbs.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Gets invoked to initialize the client. During initialization, the configurations provided through the config record is used to determine which type of additional behaviours are added to the endpoint (e.g., caching, security, circuit breaking).",
+            "parameters": [
+              {
+                "name": "url",
+                "type": {
+                  "name": "string"
+                },
+                "description": "URL of the target service"
+              },
+              {
+                "name": "config",
+                "type": {
+                  "name": "ClientConfiguration?",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "ClientConfiguration"
+                    }
+                  ]
+                },
+                "description": "The configurations to be used when initializing the client"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "nil"
+              }
+            }
+          },
+          {
+            "name": "get",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP GET requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "post",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP POST requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "put",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP PUT requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "delete",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP DELETE requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "name": "ClientConfiguration",
+        "description": "Provides a set of configurations for controlling the behaviours when communicating with a remote HTTP endpoint. The following fields are inherited from the other configuration records in addition to the Client-specific configs.",
+        "type": "Record",
+        "fields": [
+          {
+            "name": "timeout",
+            "type": {
+              "name": "int"
+            },
+            "description": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ballerinax/mysql",
+    "description": "This package provides the functionality required to access and manipulate data stored in a MySQL database.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "Represents a MySQL database client.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Initializes the MySQL Client. The client must be kept open throughout the application lifetime.",
+            "parameters": [
+              {
+                "name": "host",
+                "description": "Hostname of the MySQL server",
+                "type": {
+                  "name": "string"
+                },
+                "default": "\"localhost\""
+              },
+              {
+                "name": "user",
+                "description": "If the MySQL server is secured, the username",
+                "type": {
+                  "name": "string?"
+                },
+                "default": "\"root\""
+              },
+              {
+                "name": "password",
+                "description": "The password of the MySQL server for the provided username",
+                "type": {
+                  "name": "string?"
+                },
+                "default": "()"
+              },
+              {
+                "name": "database",
+                "description": "The name of the database",
+                "type": {
+                  "name": "string?"
+                },
+                "default": "()"
+              },
+              {
+                "name": "port",
+                "description": "Port number of the MySQL server",
+                "type": {
+                  "name": "int"
+                },
+                "default": "3306"
+              },
+              {
+                "name": "options",
+                "description": "MySQL database options",
+                "type": {
+                  "name": "Options?",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "Options"
+                    }
+                  ]
+                },
+                "default": "()"
+              },
+              {
+                "name": "connectionPool",
+                "description": "The `sql:ConnectionPool` to be used for the connection. If there is no\n`connectionPool` provided, the global connection pool (shared by all clients) will be used",
+                "type": {
+                  "name": "sql:ConnectionPool?",
+                  "links": [
+                    {
+                      "category": "external",
+                      "recordName": "ConnectionPool",
+                      "libraryName": "ballerina/sql"
+                    }
+                  ]
+                },
+                "default": "()"
+              }
+            ],
+            "return": {
+              "description": "An `sql:Error` if the client creation fails",
+              "type": {
+                "name": "sql:Error?",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "query",
+            "type": "Remote Function",
+            "description": "Executes the query, which may return multiple results.\nWhen processing the stream, make sure to consume all fetched data or close the stream.",
+            "parameters": [
+              {
+                "name": "sqlQuery",
+                "description": "The SQL query such as `` `SELECT * from Album WHERE name=${albumName}` ``",
+                "type": {
+                  "name": "sql:ParameterizedQuery",
+                  "links": [
+                    {
+                      "category": "external",
+                      "recordName": "ParameterizedQuery",
+                      "libraryName": "ballerina/sql"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "rowType",
+                "description": "The `typedesc` of the record to which the result needs to be returned",
+                "type": {
+                  "name": "typedesc<record {}>"
+                },
+                "default": "<>"
+              }
+            ],
+            "return": {
+              "description": "Stream of records in the `rowType` type",
+              "type": {
+                "name": "stream<rowType,sql:Error?>",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "queryRow",
+            "type": "Remote Function",
+            "description": "Executes the query, which is expected to return at most one row of the result.\nIf the query does not return any results, `sql:NoRowsError` is returned.",
+            "parameters": [
+              {
+                "name": "sqlQuery",
+                "description": "The SQL query such as `` `SELECT * from Album WHERE name=${albumName}` ``",
+                "type": {
+                  "name": "sql:ParameterizedQuery",
+                  "links": [
+                    {
+                      "category": "external",
+                      "recordName": "ParameterizedQuery",
+                      "libraryName": "ballerina/sql"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "returnType",
+                "description": "The `typedesc` of the record to which the result needs to be returned.\nIt can be a basic type if the query result contains only one column",
+                "type": {
+                  "name": "typedesc<anydata>"
+                },
+                "default": "<>"
+              }
+            ],
+            "return": {
+              "description": "Result in the `returnType` type or an `sql:Error`",
+              "type": {
+                "name": "returnType|sql:Error",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "execute",
+            "type": "Remote Function",
+            "description": "Executes the SQL query. Only the metadata of the execution is returned (not the results from the query).",
+            "parameters": [
+              {
+                "name": "sqlQuery",
+                "description": "The SQL query such as `` `DELETE FROM Album WHERE artist=${artistName}` ``",
+                "type": {
+                  "name": "sql:ParameterizedQuery",
+                  "links": [
+                    {
+                      "category": "external",
+                      "recordName": "ParameterizedQuery",
+                      "libraryName": "ballerina/sql"
+                    }
+                  ]
+                }
+              }
+            ],
+            "return": {
+              "description": "Metadata of the query execution as an `sql:ExecutionResult` or an `sql:Error`",
+              "type": {
+                "name": "sql:ExecutionResult|sql:Error",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "ExecutionResult",
+                    "libraryName": "ballerina/sql"
+                  },
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "batchExecute",
+            "type": "Remote Function",
+            "description": "Executes an SQL query with multiple sets of parameters in a batch. Only the metadata of the execution is returned (not results from the query).\nIf one of the commands in the batch fails (except syntax error), the `sql:BatchExecuteError` will be deferred until the remaining commands are completed.",
+            "parameters": [
+              {
+                "name": "sqlQueries",
+                "description": "The SQL query with multiple sets of parameters",
+                "type": {
+                  "name": "sql:ParameterizedQuery[]",
+                  "links": [
+                    {
+                      "category": "external",
+                      "recordName": "ParameterizedQuery",
+                      "libraryName": "ballerina/sql"
+                    }
+                  ]
+                }
+              }
+            ],
+            "return": {
+              "description": "Metadata of the query execution as an `sql:ExecutionResult[]` or an `sql:Error`",
+              "type": {
+                "name": "sql:ExecutionResult[]|sql:Error",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "ExecutionResult",
+                    "libraryName": "ballerina/sql"
+                  },
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "close",
+            "type": "Normal Function",
+            "description": "Closes the MySQL client and shuts down the connection pool. The client must be closed only at the end of the\napplication lifetime (or closed for graceful stops in a service).",
+            "parameters": [],
+            "return": {
+              "description": "Possible `sql:Error` when closing the client",
+              "type": {
+                "name": "sql:Error?",
+                "links": [
+                  {
+                    "category": "external",
+                    "recordName": "Error",
+                    "libraryName": "ballerina/sql"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "fields": [
+          {
+            "name": "ssl",
+            "description": "SSL configurations to be used",
+            "type": {
+              "name": "SecureSocket",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "SecureSocket"
+                }
+              ]
+            }
+          },
+          {
+            "name": "failoverConfig",
+            "description": "Server failover configurations to be used",
+            "type": {
+              "name": "FailoverConfig",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "FailoverConfig"
+                }
+              ]
+            }
+          },
+          {
+            "name": "useXADatasource",
+            "description": "Flag to enable or disable XADatasource",
+            "type": {
+              "name": "boolean"
+            },
+            "default": "false"
+          },
+          {
+            "name": "connectTimeout",
+            "description": "Timeout (in seconds) to be used when establishing a connection to the MySQL server",
+            "type": {
+              "name": "decimal"
+            },
+            "default": "30"
+          },
+          {
+            "name": "socketTimeout",
+            "description": "Socket timeout (in seconds) to be used during the read/write operations with the MySQL server\n(0 means no socket timeout)",
+            "type": {
+              "name": "decimal"
+            },
+            "default": "0"
+          },
+          {
+            "name": "serverTimezone",
+            "description": "Configures the connection time zone, which is used by the `Connector/J` if the conversion between a Ballerina\napplication and a target time zone is required when preserving instant temporal values",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "noAccessToProcedureBodies",
+            "description": "With this option the user is allowed to invoke procedures with access to metadata restricted",
+            "type": {
+              "name": "boolean"
+            },
+            "default": "false"
+          }
+        ],
+        "name": "Options",
+        "description": "Provides a set of additional configurations related to the MySQL database connection.",
+        "type": "Record"
+      }
+    ]
+  },
+  {
+    "name": "ballerina/sql",
+    "description": "This module provides the generic interface and functionality to interact with an SQL database. The corresponding database",
+    "clients": [],
+    "typeDefs": [
+      {
+        "fields": [
+          {
+            "name": "maxOpenConnections",
+            "description": "The maximum number of open connections that the pool is allowed to have.\nIncludes both idle and in-use connections. The default value is 15. This can be changed through\nthe configuration API with the `ballerina.sql.maxOpenConnections` key",
+            "type": {
+              "name": "int"
+            },
+            "default": "maxOpenConnections"
+          },
+          {
+            "name": "maxConnectionLifeTime",
+            "description": "The maximum lifetime (in seconds) of a connection in the pool. The default value is 1800\nseconds (30 minutes). A value of 0 indicates an unlimited maximum lifetime (infinite lifetime).\nThe minimum allowed value is 30 seconds. This can be changed through the configuration API\nwith the `ballerina.sql.maxConnectionLifeTime` key.",
+            "type": {
+              "name": "decimal"
+            },
+            "default": "maxConnectionLifeTime"
+          },
+          {
+            "name": "minIdleConnections",
+            "description": "The minimum number of idle connections that the pool tries to maintain. The default value\nis the same as `maxOpenConnections` and it can be changed through the configuration\nAPI with the `ballerina.sql.minIdleConnections` key",
+            "type": {
+              "name": "int"
+            },
+            "default": "minIdleConnections"
+          }
+        ],
+        "name": "ConnectionPool",
+        "description": "Represents the properties, which are used to configure a DB connection pool.\nDefault values of the fields can be set through the configuration API.",
+        "type": "Record"
+      },
+      {
+        "name": "Error",
+        "description": "Defines the generic error type for the `sql` module.",
+        "type": "error"
+      },
+      {
+        "functions": [],
+        "name": "ParameterizedQuery",
+        "description": "",
+        "type": "Class"
+      },
+      {
+        "fields": [
+          {
+            "name": "affectedRowCount",
+            "description": "Number of rows affected by the execution of the query. It may be one of the following,  \n(1) A number greater than or equal to zero, the count of affected rows after the successful execution of the query  \n(2) A value of the `SUCCESS_NO_INFO`, the count of affected rows is unknown after the successful execution of the query  \n(3) A value of the `EXECUTION_FAILED`, the query execution failed",
+            "type": {
+              "name": "int?"
+            }
+          },
+          {
+            "name": "lastInsertId",
+            "description": "The ID generated by the database in response to a query execution. This can be `()` in case the database does not support this feature",
+            "type": {
+              "name": "string|int?"
+            }
+          }
+        ],
+        "name": "ExecutionResult",
+        "description": "Metadata of the query execution.",
+        "type": "Record"
+      }
+    ]
+  }
+]

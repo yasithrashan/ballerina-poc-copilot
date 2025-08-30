@@ -1,0 +1,802 @@
+[
+  {
+    "name": "ballerina/http",
+    "description": "This module allows you to access the http client and server endpoints.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "The HTTP client provides the capability for initiating contact with a remote HTTP service. The API it provides includes the functions for the standard HTTP methods forwarding a received request and sending requests using custom HTTP verbs.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Gets invoked to initialize the client. During initialization, the configurations provided through the config record is used to determine which type of additional behaviours are added to the endpoint (e.g., caching, security, circuit breaking).",
+            "parameters": [
+              {
+                "name": "url",
+                "type": {
+                  "name": "string"
+                },
+                "description": "URL of the target service"
+              },
+              {
+                "name": "config",
+                "type": {
+                  "name": "ClientConfiguration?",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "ClientConfiguration"
+                    }
+                  ]
+                },
+                "description": "The configurations to be used when initializing the client"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "nil"
+              }
+            }
+          },
+          {
+            "name": "get",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP GET requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "post",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP POST requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "put",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP PUT requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          },
+          {
+            "name": "delete",
+            "type": "Remote Function",
+            "description": "function can be used to send HTTP DELETE requests to HTTP endpoints.",
+            "parameters": [
+              {
+                "name": "path",
+                "type": {
+                  "name": "string"
+                },
+                "description": "Resource path"
+              },
+              {
+                "name": "message",
+                "type": {
+                  "name": "anydata"
+                },
+                "description": "An HTTP outbound request or any allowed payload"
+              },
+              {
+                "name": "headers",
+                "type": {
+                  "name": "map<string|string[]>?"
+                },
+                "description": "The entity headers"
+              }
+            ],
+            "return": {
+              "type": {
+                "name": "<>|error"
+              },
+              "description": "The response record of the request or an `http:ClientError` if failed to establish the communication with the upstream server or a data binding failure"
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "name": "ClientConfiguration",
+        "description": "Provides a set of configurations for controlling the behaviours when communicating with a remote HTTP endpoint. The following fields are inherited from the other configuration records in addition to the Client-specific configs.",
+        "type": "Record",
+        "fields": [
+          {
+            "name": "timeout",
+            "type": {
+              "name": "int"
+            },
+            "description": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ballerinax/openai.chat",
+    "description": "[OpenAI](https://openai.com/), an AI research organization focused on creating friendly AI for humanity, offers the [OpenAI API](https://platform.openai.com/docs/api-reference/introduction) to access its powerful AI models for tasks like natural language processing and image generation.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "The OpenAI REST API. Please see https://platform.openai.com/docs/api-reference for more details.",
+        "functions": [
+          {
+            "name": "init",
+            "type": "Constructor",
+            "description": "Gets invoked to initialize the `connector`.",
+            "parameters": [
+              {
+                "name": "config",
+                "description": "The configurations to be used when initializing the `connector`",
+                "type": {
+                  "name": "ConnectionConfig",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "ConnectionConfig"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "serviceUrl",
+                "description": "URL of the target service",
+                "type": {
+                  "name": "string"
+                },
+                "default": "\"https://api.openai.com/v1\""
+              }
+            ],
+            "return": {
+              "description": "An error if connector initialization failed",
+              "type": {
+                "name": "error?"
+              }
+            }
+          },
+          {
+            "accessor": "post",
+            "paths": ["chat", "completions"],
+            "type": "Resource Function",
+            "description": "Creates a model response for the given chat conversation.",
+            "parameters": [
+              {
+                "name": "payload",
+                "description": "",
+                "type": {
+                  "name": "CreateChatCompletionRequest",
+                  "links": [
+                    {
+                      "category": "internal",
+                      "recordName": "CreateChatCompletionRequest"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "headers",
+                "description": "Headers to be sent with the request",
+                "type": {
+                  "name": "map<string|string[]>"
+                },
+                "default": "{}"
+              }
+            ],
+            "return": {
+              "description": "OK",
+              "type": {
+                "name": "CreateChatCompletionResponse|error",
+                "links": [
+                  {
+                    "category": "internal",
+                    "recordName": "CreateChatCompletionResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "typeDefs": [
+      {
+        "fields": [
+          {
+            "name": "auth",
+            "description": "Configurations related to client authentication",
+            "type": {
+              "name": "http:BearerTokenConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "BearerTokenConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "httpVersion",
+            "description": "The HTTP version understood by the client",
+            "type": {
+              "name": "http:HttpVersion",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "HttpVersion",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            },
+            "default": "http:HTTP_2_0"
+          },
+          {
+            "name": "http1Settings",
+            "description": "Configurations related to HTTP/1.x protocol",
+            "type": {
+              "name": "ClientHttp1Settings",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ClientHttp1Settings"
+                }
+              ]
+            }
+          },
+          {
+            "name": "http2Settings",
+            "description": "Configurations related to HTTP/2 protocol",
+            "type": {
+              "name": "http:ClientHttp2Settings",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ClientHttp2Settings",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "timeout",
+            "description": "The maximum time to wait (in seconds) for a response before closing the connection",
+            "type": {
+              "name": "decimal"
+            },
+            "default": "60"
+          },
+          {
+            "name": "forwarded",
+            "description": "The choice of setting `forwarded`/`x-forwarded` header",
+            "type": {
+              "name": "string"
+            },
+            "default": "\"disable\""
+          },
+          {
+            "name": "poolConfig",
+            "description": "Configurations associated with request pooling",
+            "type": {
+              "name": "http:PoolConfiguration",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "PoolConfiguration",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cache",
+            "description": "HTTP caching related configurations",
+            "type": {
+              "name": "http:CacheConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "CacheConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "compression",
+            "description": "Specifies the way of handling compression (`accept-encoding`) header",
+            "type": {
+              "name": "http:Compression",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "Compression",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            },
+            "default": "http:COMPRESSION_AUTO"
+          },
+          {
+            "name": "circuitBreaker",
+            "description": "Configurations associated with the behaviour of the Circuit Breaker",
+            "type": {
+              "name": "http:CircuitBreakerConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "CircuitBreakerConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "retryConfig",
+            "description": "Configurations associated with retrying",
+            "type": {
+              "name": "http:RetryConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "RetryConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "responseLimits",
+            "description": "Configurations associated with inbound response size limits",
+            "type": {
+              "name": "http:ResponseLimitConfigs",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ResponseLimitConfigs",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "secureSocket",
+            "description": "SSL/TLS-related options",
+            "type": {
+              "name": "http:ClientSecureSocket",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ClientSecureSocket",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "proxy",
+            "description": "Proxy server related options",
+            "type": {
+              "name": "http:ProxyConfig",
+              "links": [
+                {
+                  "category": "external",
+                  "recordName": "ProxyConfig",
+                  "libraryName": "ballerina/http"
+                }
+              ]
+            }
+          },
+          {
+            "name": "validation",
+            "description": "Enables the inbound payload validation functionality which provided by the constraint package. Enabled by default",
+            "type": {
+              "name": "boolean"
+            },
+            "default": "true"
+          }
+        ],
+        "name": "ConnectionConfig",
+        "description": "Provides a set of configurations for controlling the behaviours when communicating with a remote HTTP endpoint.",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "messages",
+            "description": "A list of messages comprising the conversation so far. [Example Python code](https://cookbook.openai.com/examples/how_to_format_inputs_to_chatgpt_models).",
+            "type": {
+              "name": "ChatCompletionRequestMessage[]",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionRequestMessage"
+                }
+              ]
+            }
+          },
+          {
+            "name": "model",
+            "description": "ID of the model to use. See the [model endpoint compatibility](/docs/models/model-endpoint-compatibility) table for details on which models work with the Chat API.",
+            "type": {
+              "name": "string|\"gpt-4o\"|\"gpt-4o-2024-05-13\"|\"gpt-4o-mini\"|\"gpt-4o-mini-2024-07-18\"|\"gpt-4-turbo\"|\"gpt-4-turbo-2024-04-09\"|\"gpt-4-0125-preview\"|\"gpt-4-turbo-preview\"|\"gpt-4-1106-preview\"|\"gpt-4-vision-preview\"|\"gpt-4\"|\"gpt-4-0314\"|\"gpt-4-0613\"|\"gpt-4-32k\"|\"gpt-4-32k-0314\"|\"gpt-4-32k-0613\"|\"gpt-3.5-turbo\"|\"gpt-3.5-turbo-16k\"|\"gpt-3.5-turbo-0301\"|\"gpt-3.5-turbo-0613\"|\"gpt-3.5-turbo-1106\"|\"gpt-3.5-turbo-0125\"|\"gpt-3.5-turbo-16k-0613\" "
+            }
+          },
+          {
+            "name": "frequency_penalty",
+            "description": "Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)",
+            "type": {
+              "name": "decimal?"
+            },
+            "default": "0"
+          },
+          {
+            "name": "logit_bias",
+            "description": "Modify the likelihood of specified tokens appearing in the completion.\n\nAccepts a JSON object that maps tokens (specified by their token ID in the tokenizer) to an associated bias value from -100 to 100. Mathematically, the bias is added to the logits generated by the model prior to sampling. The exact effect will vary per model, but values between -1 and 1 should decrease or increase likelihood of selection; values like -100 or 100 should result in a ban or exclusive selection of the relevant token.",
+            "type": {
+              "name": "record {}?"
+            }
+          },
+          {
+            "name": "logprobs",
+            "description": "Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the `content` of `message`.",
+            "type": {
+              "name": "boolean?"
+            },
+            "default": "false"
+          },
+          {
+            "name": "top_logprobs",
+            "description": "An integer between 0 and 20 specifying the number of most likely tokens to return at each token position, each with an associated log probability. `logprobs` must be set to `true` if this parameter is used.",
+            "type": {
+              "name": "int?"
+            }
+          },
+          {
+            "name": "max_tokens",
+            "description": "The maximum number of [tokens](/tokenizer) that can be generated in the chat completion.\n\nThe total length of input tokens and generated tokens is limited by the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.",
+            "type": {
+              "name": "int?"
+            }
+          },
+          {
+            "name": "n",
+            "description": "How many chat completion choices to generate for each input message. Note that you will be charged based on the number of generated tokens across all of the choices. Keep `n` as `1` to minimize costs.",
+            "type": {
+              "name": "int?"
+            },
+            "default": "1"
+          },
+          {
+            "name": "presence_penalty",
+            "description": "Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)",
+            "type": {
+              "name": "decimal?"
+            },
+            "default": "0"
+          },
+          {
+            "name": "response_format",
+            "description": "",
+            "type": {
+              "name": "CreateChatCompletionRequest_response_format",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "CreateChatCompletionRequest_response_format"
+                }
+              ]
+            }
+          },
+          {
+            "name": "seed",
+            "description": "This feature is in Beta.\nIf specified, our system will make a best effort to sample deterministically, such that repeated requests with the same `seed` and parameters should return the same result.\nDeterminism is not guaranteed, and you should refer to the `system_fingerprint` response parameter to monitor changes in the backend.",
+            "type": {
+              "name": "int?"
+            }
+          },
+          {
+            "name": "service_tier",
+            "description": "Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:\n- If set to 'auto', the system will utilize scale tier credits until they are exhausted.\n- If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarentee.\n- When not set, the default behavior is 'auto'.\n\nWhen this parameter is set, the response body will include the `service_tier` utilized.",
+            "type": {
+              "name": "    \"auto\"|\"default\"?"
+            }
+          },
+          {
+            "name": "stop",
+            "description": "Up to 4 sequences where the API will stop generating further tokens.",
+            "type": {
+              "name": "string|string[]?"
+            }
+          },
+          {
+            "name": "'stream",
+            "description": "If set, partial message deltas will be sent, like in ChatGPT. Tokens will be sent as data-only [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format) as they become available, with the stream terminated by a `data: [DONE]` message. [Example Python code](https://cookbook.openai.com/examples/how_to_stream_completions).",
+            "type": {
+              "name": "boolean?"
+            },
+            "default": "false"
+          },
+          {
+            "name": "stream_options",
+            "description": "",
+            "type": {
+              "name": "ChatCompletionStreamOptions?",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionStreamOptions"
+                }
+              ]
+            }
+          },
+          {
+            "name": "temperature",
+            "description": "What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.",
+            "type": {
+              "name": "decimal?"
+            },
+            "default": "1"
+          },
+          {
+            "name": "top_p",
+            "description": "An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.",
+            "type": {
+              "name": "decimal?"
+            },
+            "default": "1"
+          },
+          {
+            "name": "tools",
+            "description": "A list of tools the model may call. Currently, only functions are supported as a tool. Use this to provide a list of functions the model may generate JSON inputs for. A max of 128 functions are supported.",
+            "type": {
+              "name": "ChatCompletionTool[]",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionTool"
+                }
+              ]
+            }
+          },
+          {
+            "name": "tool_choice",
+            "description": "",
+            "type": {
+              "name": "ChatCompletionToolChoiceOption",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionToolChoiceOption"
+                }
+              ]
+            }
+          },
+          {
+            "name": "parallel_tool_calls",
+            "description": "",
+            "type": {
+              "name": "ParallelToolCalls",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ParallelToolCalls"
+                }
+              ]
+            }
+          },
+          {
+            "name": "user",
+            "description": "A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/docs/guides/safety-best-practices/end-user-ids).",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "function_call",
+            "description": "Deprecated in favor of `tool_choice`.\n\nControls which (if any) function is called by the model.\n`none` means the model will not call a function and instead generates a message.\n`auto` means the model can pick between generating a message or calling a function.\nSpecifying a particular function via `{\"name\": \"my_function\"}` forces the model to call that function.\n\n`none` is the default when no functions are present. `auto` is the default if functions are present.",
+            "type": {
+              "name": "    \"none\"|\"auto\"|ChatCompletionFunctionCallOption",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionFunctionCallOption"
+                }
+              ]
+            }
+          },
+          {
+            "name": "functions",
+            "description": "Deprecated in favor of `tools`.\n\nA list of functions the model may generate JSON inputs for.",
+            "type": {
+              "name": "ChatCompletionFunctions[]",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "ChatCompletionFunctions"
+                }
+              ]
+            }
+          }
+        ],
+        "name": "CreateChatCompletionRequest",
+        "description": "",
+        "type": "Record"
+      },
+      {
+        "fields": [
+          {
+            "name": "id",
+            "description": "A unique identifier for the chat completion.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "choices",
+            "description": "A list of chat completion choices. Can be more than one if `n` is greater than 1.",
+            "type": {
+              "name": "CreateChatCompletionResponse_choices[]",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "CreateChatCompletionResponse_choices"
+                }
+              ]
+            }
+          },
+          {
+            "name": "created",
+            "description": "The Unix timestamp (in seconds) of when the chat completion was created.",
+            "type": {
+              "name": "int"
+            }
+          },
+          {
+            "name": "model",
+            "description": "The model used for the chat completion.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "service_tier",
+            "description": "The service tier used for processing the request. This field is only included if the `service_tier` parameter is specified in the request.",
+            "type": {
+              "name": "    \"scale\"|\"default\"?"
+            }
+          },
+          {
+            "name": "system_fingerprint",
+            "description": "This fingerprint represents the backend configuration that the model runs with.\n\nCan be used in conjunction with the `seed` request parameter to understand when backend changes have been made that might impact determinism.",
+            "type": {
+              "name": "string"
+            }
+          },
+          {
+            "name": "'object",
+            "description": "The object type, which is always `chat.completion`.",
+            "type": {
+              "name": "    \"chat.completion\" "
+            }
+          },
+          {
+            "name": "usage",
+            "description": "",
+            "type": {
+              "name": "CompletionUsage",
+              "links": [
+                {
+                  "category": "internal",
+                  "recordName": "CompletionUsage"
+                }
+              ]
+            }
+          }
+        ],
+        "name": "CreateChatCompletionResponse",
+        "description": "Represents a chat completion response returned by model, based on the provided input.",
+        "type": "Record"
+      }
+    ]
+  },
+  {
+    "name": "ballerinax/github",
+    "description": "[GitHub](https://github.com/) is a widely used platform for version control and collaboration, allowing developers to work together on projects from anywhere. It hosts a vast array of both open-source and private projects, providing a suite of development tools for collaborative software development.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "GitHub's v3 REST API.",
+        "functions": []
+      }
+    ],
+    "typeDefs": []
+  },
+  {
+    "name": "ballerinax/slack",
+    "description": "[Slack](https://slack.com/) is a collaboration platform for teams, offering real-time messaging, file sharing, and integrations with various tools. It helps streamline communication and enhance productivity through organized channels and direct messaging.",
+    "clients": [
+      {
+        "name": "Client",
+        "description": "One way to interact with the Slack platform is its HTTP RPC-based Web API, a collection of methods requiring OAuth 2.0-based user, bot, or workspace tokens blessed with related OAuth scopes.",
+        "functions": []
+      }
+    ],
+    "typeDefs": []
+  }
+]

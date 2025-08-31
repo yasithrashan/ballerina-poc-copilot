@@ -1,11 +1,11 @@
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import {z} from "zod"
+import { z } from "zod"
 
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
@@ -27,14 +27,32 @@ if (!balMdContent.length) {
     process.exit(1);
 }
 
-const projectPath = process.env.PROJECT_PATH;
-if (!projectPath) {
-    console.error("[ERROR] PROJECT_PATH environment variable is not set.");
-    process.exit(1);
-}
+const extractRelevantCode = tool({
+    name: "extractRelevantCode",
+    description: 'Reads a manual extract file (extractcode.md) and returns the actual relevant code for modification. The path is taken from the environment variable EXTRACT_FILE_PATH.',
+    inputSchema: z.object({}),
+    execute: async () => {
+        const extractFilePath = process.env.EXTRACT_FILE_PATH;
+        if (!extractFilePath) {
+            throw new Error("[ERROR] EXTRACT_FILE_PATH environment variable is not set.");
+        }
 
+        if (!fs.existsSync(extractFilePath)) {
+            throw new Error(`[ERROR] File not found at path: ${extractFilePath}`);
+        }
 
-// Generate Ballerina code function (modified to remove tool usage)
+        const content = fs.readFileSync(extractFilePath, "utf-8");
+        if (!content.length) {
+            throw new Error(`[ERROR] File is empty at path: ${extractFilePath}`);
+        }
+
+        console.log("[SUCCESS] Extracted the relevant code.");
+
+        return { actualCode: content };
+    }
+});
+
+// Generate Ballerina code function
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
@@ -51,7 +69,8 @@ async function generateBallerinaCode(
             { role: "system", content: systemPrompt },
             { role: "user", content: userQuery },
         ],
-        tools:{},
+        tools: { extractRelevantCode },
+        stopWhen: stepCountIs(25),
         maxOutputTokens: 8192,
     });
 
@@ -65,6 +84,8 @@ function getSystemPromptBalMd(balMdContent: string): string {
 <bal_md>
 ${balMdContent}
 </bal_md>
+
+There is a tool called extractRelevantContent to get the actual code after reading the bal.md file.
 
 Use this project summary to understand the high level details of the project files for writing Ballerina code.
 This file includes:
@@ -106,6 +127,25 @@ If the query requires code, follow these steps to generate the Ballerina code:
     - First, analyze the user's query and the Project Summary carefully (<bal_md>).
     - Thought: What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
     - Analysis: Use the <bal_md> content to get a high-level summary of the project and identify which parts of the codebase are relevant to the query.
+    - Once the bal.md file has been successfully read, return the matched context based on the user query, formatted as specified below in your response.
+
+
+    Print a JSON object with the following fields exactly in the response:
+    {
+    "targetFile": "...",
+    "imports": [...],
+    "configurables": [...],
+    "moduleVars": [...],
+    "typeDefs": [...],
+    "functionDefs": [...],
+    "serviceDefs": [...],
+    "resourceDefs": [...]
+    }
+
+    Rule:   After that, call the tool "extractRelevantCode" to get the actual code.
+            Use the "extractFilePath" parameter that is provided by the environment / system (do not try to generate paths yourself).
+
+            You must use the extractRelevantCode tool for get actual content.
 
 2. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -167,8 +207,10 @@ Important reminders:
 - For GraphQL service related queries, If the user haven't specified their own GraphQL Schema, Write the proposed GraphQL schema for the user query right after explanation before generating the ballerina code. Use same names as the GraphQL Schema when defining record types.
 
 Begin your response with the explanation, once the entire explanation is finished only, include codeblock segments(if any) in the end of the response.
+Do not forget to write the bal.md matched context according to the user query with the given json format in the end of the response.
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
+
 
 Example Codeblock segment:
 <code filename="main.bal">

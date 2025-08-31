@@ -7,6 +7,24 @@ import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
 import { z } from "zod"
 
+// Token usage tracking interface
+interface TokenUsage {
+    userQueryTokens: number;
+    langLibsTokens: number;
+    apiDocsTokens: number;
+    balMdTokens: number;
+    extractCodeTokens: number;
+    totalInputTokens: number;
+    outputTokens: number;
+}
+
+// Simple token counting function (approximate)
+function countTokens(text: string): number {
+    // Rough approximation: 1 token ≈ 4 characters for English text
+    // This is a simplified approach; for more accuracy, you'd use a proper tokenizer
+    return Math.ceil(text.length / 4);
+}
+
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
 if (!jsonPath) {
@@ -52,18 +70,34 @@ const extractRelevantCode = tool({
     }
 });
 
-// Generate Ballerina code function
+// Generate Ballerina code function with token tracking
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
-): Promise<string> {
+): Promise<{ response: string; tokenUsage: TokenUsage }> {
     const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
     const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
     const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + getSystemPromptBalMd(balMdContent);
 
     console.log("Generating Code...");
 
-    const { text } = await generateText({
+    // Calculate token usage for different components
+    const userQueryTokens = countTokens(userQuery);
+    const langLibsTokens = countTokens(JSON.stringify(LANG_LIB));
+    const apiDocsTokens = countTokens(JSON.stringify(API_DOC));
+    const balMdTokens = countTokens(balMdContent);
+
+    // Get extract code content for token counting
+    let extractCodeTokens = 0;
+    const extractFilePath = process.env.EXTRACT_FILE_PATH;
+    if (extractFilePath && fs.existsSync(extractFilePath)) {
+        const extractContent = fs.readFileSync(extractFilePath, "utf-8");
+        extractCodeTokens = countTokens(extractContent);
+    }
+
+    const totalInputTokens = countTokens(systemPrompt) + userQueryTokens;
+
+    const result = await generateText({
         model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
             { role: "system", content: systemPrompt },
@@ -74,7 +108,19 @@ async function generateBallerinaCode(
         maxOutputTokens: 8192,
     });
 
-    return text;
+    const outputTokens = countTokens(result.text);
+
+    const tokenUsage: TokenUsage = {
+        userQueryTokens,
+        langLibsTokens,
+        apiDocsTokens,
+        balMdTokens,
+        extractCodeTokens,
+        totalInputTokens,
+        outputTokens
+    };
+
+    return { response: result.text, tokenUsage };
 }
 
 // Helper functions (updated to remove tool-related content)
@@ -221,6 +267,23 @@ Example Codeblock segment:
 `;
 }
 
+// Format token usage for output
+function formatTokenUsage(tokenUsage: TokenUsage): string {
+    return `
+=== TOKEN USAGE BREAKDOWN ===
+User Query Tokens: ${tokenUsage.userQueryTokens.toLocaleString()}
+LangLibs Tokens: ${tokenUsage.langLibsTokens.toLocaleString()}
+API Docs Tokens: ${tokenUsage.apiDocsTokens.toLocaleString()}
+Bal.md Tokens: ${tokenUsage.balMdTokens.toLocaleString()}
+Extract Code MD File Tokens: ${tokenUsage.extractCodeTokens.toLocaleString()}
+
+Total Input Tokens: ${tokenUsage.totalInputTokens.toLocaleString()}
+Output Tokens: ${tokenUsage.outputTokens.toLocaleString()}
+
+Total Tokens Used: ${(tokenUsage.totalInputTokens + tokenUsage.outputTokens).toLocaleString()}
+`;
+}
+
 // Main execution
 async function main() {
     try {
@@ -230,8 +293,13 @@ async function main() {
             process.exit(1);
         }
 
-        // Run the code generator
-        const response = await generateBallerinaCode(userQuery, [API_DOC]);
+        console.log("Starting Ballerina code generation with token tracking...");
+
+        // Run the code generator with token tracking
+        const { response, tokenUsage } = await generateBallerinaCode(userQuery, [API_DOC]);
+
+        // Log token usage to console
+        console.log("\n" + formatTokenUsage(tokenUsage));
 
         // Ensure output directory
         const outputDir = path.join(process.cwd(), "poc");
@@ -244,22 +312,43 @@ async function main() {
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        // Final content with response only
+        // Final content with response and token usage
         const finalContent = `=== USER QUERY ===
 ${userQuery}
 
 === RESPONSE ===
 ${response}
+
+${formatTokenUsage(tokenUsage)}
+
+=== GENERATION METADATA ===
+Generated At: ${now.toISOString()}
+Model Used: ${ANTHROPIC_HAIKU}
+Max Output Tokens: 8192
+Step Count Limit: 25
 `;
 
         // Save everything into one txt file
         fs.writeFileSync(outputPath, finalContent, "utf-8");
         console.log(`\nMain execution output saved to ${outputPath}\n`);
+
+        // Also create a separate JSON file with just the token usage for easy parsing
+        const tokenUsageJsonPath = path.join(outputDir, `${timestamp}_tokens.json`);
+        fs.writeFileSync(tokenUsageJsonPath, JSON.stringify({
+            timestamp: now.toISOString(),
+            userQuery,
+            tokenUsage,
+            model: ANTHROPIC_HAIKU,
+            maxOutputTokens: 8192,
+            stepCountLimit: 25
+        }, null, 2), "utf-8");
+
+        console.log(`Token usage JSON saved to ${tokenUsageJsonPath}\n`);
+
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
+        process.exit(1);
     }
 }
 
 main();
-
-export { generateBallerinaCode };

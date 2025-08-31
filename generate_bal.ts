@@ -35,59 +35,127 @@ function readBalFiles(filePaths: string[]): BalFile[] {
 
 export async function generateBalMd(balFiles: BalFile[]) {
     const systemPrompt = `
-You are an expert Ballerina developer and technical writer. Your task is to generate a clear, well-structured Markdown summary of a Ballerina project (bal.md) based on the project file contents provided.
+You are an expert Ballerina developer and technical writer. Your task is to generate a comprehensive, well-structured Markdown documentation (bal.md) for a Ballerina project based on the project files provided.
 
 Each file has this structure:
 - filePath: string – the file path
 - content: string – the complete file content
 
-Instructions:
+**CRITICAL INSTRUCTIONS:**
 
-Rule: Use only **actual code symbols and keywords**. Include doc comments and inline comments from the code, correcting grammar and spelling as needed.
-      Be **minimal**: include only relevant sections and information; do not add extra explanations.
+1. **Use ONLY actual code elements** - Extract information directly from the provided code
+2. **Include all functions** – Include every function in the code, whether or not it has comments/doc comments. Do not skip any function.
+3. **Include doc comments and inline comments if they exist** - For functions, variables, types, and services, include comments only if present.
+4. **Be comprehensive but structured** - Include all relevant details in an organized manner
+5. **Follow the exact format structure shown below**
 
-1. Analyze the code and determine the logical structure:
-- Project files and their purposes
-- Imports used in each file
-- Global variables, in-memory maps, constants, or any other data structures
-- Services, listeners, and endpoints
-- Resource functions with methods, paths, descriptions, responses, and validations
-- Record types, enums, and any custom types
+**OUTPUT FORMAT:**
 
-2. Generate a Markdown summary that reflects the actual project structure. Use headings, subheadings, bullet points, and code blocks as appropriate.
+Start with project overview:
+\`\`\`
+# [Project Name] Project
+## This is the project summary of the codebase
 
-3. Only include sections relevant to the project; omit sections that don't exist.
+## Those are the Project Files
+- \`filename.bal\` - [Brief description of file purpose]
+[... list all .bal files]
 
-4. Be concise, accurate, and structured in a way that a developer can understand the entire project at a glance.
+---
+\`\`\`
 
-The output should look professional and follow this style (dynamic, based on the actual project, not hardcoded):
+Then for each file, follow this EXACT structure:
 
-### **Output Structure**
-For each file, follow this exact structure:
-
-## {filename}
+\`\`\`
+## File Name: [filename.bal]
 
 ### Imports
-- {import statements or "None"}
+- \`import-statement\`
+[... list all imports or "None" if no imports]
 
-### Configurable Level Variables
-- {list all configurable variables or "None"}
+---
+
+### Configurable Variables
+- \`variableName\` - [type] - \`"defaultValue"\`
+[... list all configurable variables or "None" if no configurable variables]
 
 ### Module Level Variables
-- {list all module-level variables or "None"}
+- \`variableName\` - [type]
+[... list all module-level variables or "None" if no module variables]
 
-### Types
-- {list all record types, enums, etc. with fields or "None"}
+---
 
 ### Functions
-- {list functions, signatures, and purpose or "None"}
+
+* **[functionName]**
+   * **Comments/DocComments**: [Function documentation or "None"]
+   * **Parameters**:
+      * **Input Parameter**:
+         * \`paramName\` - [type] - [description or "None"]
+   * **Returns**: \`[ReturnType]\` or \`[ErrorType]\`
+
+---
 
 ### Services
-- {list services and their listeners or "None"}
+[Service Type]: \`[basePath]\` on port \`[portVariable] [portNumber]\`
 
-### Resources
-- {list resource functions with method, path, purpose, responses or "None"}
+---
+
+### Endpoints
+
+#### \`[basePath]/\`
+
+* **[METHOD] [path]**
+   * **Parameters**:
+      * **Path Parameter**:
+         * \`paramName\` - [type] - [description]
+      * **Query Parameter**:
+         * \`paramName\` - [type] - [description]
+      * **Body / Payload Parameter**:
+         * \`paramName\` - [type] - [description]
+   * **Returns**: \`[ReturnType]\` or \`[ErrorType]\`
+   * **Status Codes**:
+     - \`[code] [description]\` - [explanation based on return types and error handling]
+
+---
+
+### Type Definitions
+
+* **[TypeName]**
+   * **Fields**:
+      * \`fieldName\` - [type] [(optional if field is optional)]
+
+[... repeat for all types]
+\`\`\`
+
+**PARSING RULES:**
+
+1. **Project Name**: Derive from directory name or main service name
+2. **File Descriptions**: Analyze file content to determine purpose (Main service implementation, Type definitions, etc.)
+3. **Configurable Variables**: Look for \`configurable\` keyword variables with their types and default values
+4. **Module Variables**: Variables declared at module level (not in functions/services)
+5. **Functions**: Extract **all functions**, including:
+   - Public, private, and internal functions
+   - Function name and signature
+   - Input parameters with their data types
+   - Return types and possible error responses
+   - Include doc comments if present; otherwise, mark "None"
+6. **Services**: Extract service definitions with their base paths and ports
+7. **Endpoints**: For each resource function, extract:
+   - HTTP method and path from function signature
+   - ALL parameter types (path, query, body) with their data types
+   - Return types and possible error responses
+   - Infer appropriate status codes from return types and error handling patterns
+8. **Types**: Extract all record types, enums, and custom type definitions with their exact field names and types
+
+**IMPORTANT:**
+- Preserve exact variable names, type names, and paths from the code
+- Include actual default values for configurable variables
+- Always include **all functions**, even if they have no comments
+- Use "None" for empty sections instead of omitting them
+- Be precise with parameter types and return types
+- Include parameter type categories (Path Parameter, Query Parameter, Body/Payload Parameter, Input Parameter) with actual types
 `;
+
 
     // Send request to the LLM
     const response = await generateText({
@@ -95,7 +163,7 @@ For each file, follow this exact structure:
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: JSON.stringify(balFiles, null, 2) }
-        ]
+        ],
     });
 
     const outputText = response.text;

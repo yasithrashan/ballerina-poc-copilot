@@ -1,11 +1,11 @@
-import { generateText, stepCountIs, tool } from "ai";
+import { generateText, tool } from "ai";
 import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { z } from "zod";
+import {z} from "zod"
 
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
@@ -33,230 +33,32 @@ if (!projectPath) {
     process.exit(1);
 }
 
-// LLM-based content extraction function
-async function extractRelevantContent(
-    fileContent: string,
-    fileName: string,
-    symbols: string[]
-): Promise<string | undefined> {
-    const systemPrompt = `You are a Ballerina code analyzer. Your task is to extract the relevent context from Ballerina source files.
 
-CRITICAL INSTRUCTIONS:
-1. Extract ONLY the exact relevent code - be very precise
-2. If the relevent code not include try to get similar or related code but related to given symbols
-3. Only return complete, syntactically correct code segments for the requested symbols
-4. Include necessary imports only if they are directly used by the extracted symbols
-
-Return the extracted content in this format:
-### File: ${fileName}
-
-[Only if there are relevant imports for the extracted symbols]
-#### Imports
-\`\`\`ballerina
-[only imports used by extracted symbols]
-\`\`\`
-
-[Only for each requested symbol that exists in the file]
-#### [Symbol Type]: [exact symbol name]
-\`\`\`ballerina
-[complete symbol definition]
-\`\`\`
-
-IMPORTANT:
-- If no requested symbols are found, return "No matching symbols found in this file"
-- Be very strict about matching - only extract what was specifically requested
-- Do not add extra functions, types, or code that wasn't asked for`;
-
-    const userQuery = symbols.length > 0
-        ? `Extract ONLY these specific symbols from the Ballerina code: ${symbols.join(', ')}\n\nBe very precise - only extract the exact symbols requested, nothing else.\n\nFile: ${fileName}\n\nCode:\n${fileContent}`
-        : `Extract all major code elements from this Ballerina file.\n\nFile: ${fileName}\n\nCode:\n${fileContent}`;
-
-    try {
-        const { text } = await generateText({
-            model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userQuery },
-            ],
-            maxOutputTokens: 4096,
-        });
-
-        return text;
-    } catch (error) {
-        console.error(`[ERROR] LLM extraction failed for ${fileName}:`, error);
-    }
-}
-
-export const tools = {
-    extractRelevantContent: tool({
-        description:
-            "Reads all Ballerina source files in the project and uses the to extract only relevant symbols. Saves result to code-extract folder.",
-        inputSchema: z.object({
-            filename: z.string().optional().describe("Target filename to process"),
-            imports: z.array(z.string()).optional().describe("Import statements to search for"),
-            configurableLevelVariables: z.array(z.string()).optional().describe("Configurable level variables to search for"),
-            moduleLevelVariable: z.array(z.string()).optional().describe("Module level variables to search for"),
-            types: z.array(z.string()).optional().describe("Type definitions to search for"),
-            functions: z.array(z.string()).optional().describe("Function definitions to search for"),
-            services: z.array(z.string()).optional().describe("Service definitions to search for"),
-            resources: z.array(z.string()).optional().describe("Resource definitions to search for"),
-        }),
-        execute: async ({
-            filename,
-            imports,
-            configurableLevelVariables,
-            moduleLevelVariable,
-            types,
-            functions,
-            services,
-            resources
-        }) => {
-            try {
-                const searchCriteria = {
-                    filename,
-                    imports,
-                    configurableLevelVariables,
-                    moduleLevelVariable,
-                    types,
-                    functions,
-                    services,
-                    resources
-                };
-
-                console.log(`[DEBUG] Tool called with search criteria: ${JSON.stringify(searchCriteria)}`);
-                console.log(`[DEBUG] PROJECT_PATH: ${projectPath}`);
-
-                // Verify project path exists
-                if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
-                    const error = `Invalid PROJECT_PATH: ${projectPath}`;
-                    console.error(`[ERROR] ${error}`);
-                    return error;
-                }
-
-                // Collect all .bal files
-                let files: string[] = [];
-                try {
-                    files = fs.readdirSync(projectPath).filter((f) => f.endsWith(".bal"));
-                } catch (err) {
-                    const errorMsg = `Failed to read project directory: ${err}`;
-                    console.error(`[ERROR] ${errorMsg}`);
-                    return errorMsg;
-                }
-
-                if (files.length === 0) {
-                    return `No .bal files found in project: ${projectPath}`;
-                }
-
-                // Filter files if filename is specified
-                if (filename) {
-                    files = files.filter(f => f === filename || f.includes(filename));
-                    if (files.length === 0) {
-                        return `No files matching '${filename}' found in project: ${projectPath}`;
-                    }
-                }
-
-                let mdResult = "";
-                let processedFiles = 0;
-
-                for (const file of files) {
-                    const fullPath = path.join(projectPath, file);
-                    console.log(`[DEBUG] Processing file: ${fullPath}`);
-
-                    if (!fs.existsSync(fullPath)) {
-                        console.warn(`[WARN] File not found: ${fullPath}`);
-                        continue;
-                    }
-
-                    const content = fs.readFileSync(fullPath, "utf-8");
-                    if (!content.trim()) {
-                        console.log(`[INFO] File ${file} is empty, skipping`);
-                        continue;
-                    }
-
-                    // Pass the relevant symbol names to LLM
-                    processedFiles++;
-                    const symbols: string[] = [
-                        ...(imports ?? []),
-                        ...(configurableLevelVariables ?? []),
-                        ...(moduleLevelVariable ?? []),
-                        ...(types ?? []),
-                        ...(functions ?? []),
-                        ...(services ?? []),
-                        ...(resources ?? [])
-                    ];
-                    const fileMd = await extractRelevantContent(content, file, symbols);
-                    if (fileMd) {
-                        mdResult += fileMd + "\n\n";
-                    }
-                }
-
-                console.log(`[DEBUG] Processed ${processedFiles} files`);
-
-                // Convert searchCriteria to string[] for saveMarkdownToFile
-                const criteriaTags: string[] = Object.entries(searchCriteria)
-                    .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
-                    .map(([key, value]) => `${key}:${Array.isArray(value) ? value.join(",") : value}`);
-
-                if (!mdResult.trim()) {
-                    const message = `No matching content found by LLM in ${files.length} files. Search criteria: ${criteriaTags.join("; ") || "all"}`;
-                    const emptyResultMd = `# Code Extract Report - No Results\n\n${message}`;
-                    const savedFilePath = saveMarkdownToFile(emptyResultMd, criteriaTags);
-                    return `${message}\n\nReport saved to: ${savedFilePath}`;
-                }
-
-                // Save result
-                const finalMd = `# Code Extract Report\n\n**Search criteria:** ${criteriaTags.join("; ") || "all content"
-                    }\n**Files processed:** ${processedFiles}\n**Generated:** ${new Date().toISOString()}\n\n---\n\n${mdResult}`;
-
-                const savedFilePath = saveMarkdownToFile(finalMd, criteriaTags);
-                return `${mdResult}\n\n---\n**Report saved to:** \`${savedFilePath}\``;
-            } catch (error) {
-                const errMsg = `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`;
-                console.error(`[ERROR] ${errMsg}`);
-                return errMsg;
-            }
-        },
-    }),
-};
-
-
-// Generate Ballerina code function (unchanged)
+// Generate Ballerina code function (modified to remove tool usage)
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
-): Promise<{ text: string; tokenSummary: any }> {
+): Promise<string> {
     const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
     const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
     const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + getSystemPromptBalMd(balMdContent);
 
-    console.log("Generating Code Agentic...");
+    console.log("Generating Code...");
 
-    const { text, usage } = await generateText({
+    const { text } = await generateText({
         model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userQuery },
         ],
-        tools: tools,
-        toolChoice: 'required',
-        stopWhen: stepCountIs(25),
+        tools:{},
         maxOutputTokens: 8192,
     });
 
-    // Only keep relevant token info
-    const tokenSummary = {
-        inputTokens: usage?.inputTokens ?? 0,
-        outputTokens: usage?.outputTokens ?? 0,
-        totalTokens:
-            (usage?.inputTokens ?? 0) +
-            (usage?.outputTokens ?? 0),
-    };
-
-    return { text, tokenSummary };
+    return text;
 }
 
-
-// Helper functions (unchanged)
+// Helper functions (updated to remove tool-related content)
 function getSystemPromptBalMd(balMdContent: string): string {
     return `
 3. Project Summary (bal.md)
@@ -264,7 +66,7 @@ function getSystemPromptBalMd(balMdContent: string): string {
 ${balMdContent}
 </bal_md>
 
-Use this project summary to understand the high level details of the project files. for writing Ballerina code.
+Use this project summary to understand the high level details of the project files for writing Ballerina code.
 This file includes:
     Each File:
         -imports
@@ -275,7 +77,7 @@ This file includes:
         -services
         -resources
         - Comments/ Doc-Comments
-Read carefully and undestand the overrall project summary
+Read carefully and understand the overall project summary.
 `;
 }
 
@@ -297,8 +99,6 @@ function getSystemPromptSuffix(langlibs: Library[]): string {
 ${JSON.stringify(langlibs)}
 </langlibs>
 
-There is a tool called extractRelevantContent to get the actual code after reading the bal.md file.
-
 If the query doesn't require code examples, answer the query by utilizing the API documentation.
 If the query requires code, follow these steps to generate the Ballerina code:
 
@@ -307,31 +107,23 @@ If the query requires code, follow these steps to generate the Ballerina code:
     - Thought: What is the user's primary goal? Am I creating a new feature, modifying existing code, or fixing a bug?
     - Analysis: Use the <bal_md> content to get a high-level summary of the project and identify which parts of the codebase are relevant to the query.
 
-2. Extract Exact Code Context with the extractRelevantContent tool
-    - Thought: Based on my goal, do I need to see the exact source code of a symbols/keywords mentioned in the query or <bal_md>?
-    - Thought: To provide accurate results for modifications or bug fixes, I must see the actual implementation using extractRelevantContent.
-    - Thought: If I don't have the actual implementation for relevant code, I have a higher chance of missing details or giving incorrect guidance.
-    - Rule: Do not guess the code. If the query involves modifying existing code, always call the tool to get the actual code.
-    - Action: Call the extractRelevantContent tool with a list of relevant symbols/keywords and related context. The tool will search the project directory for .bal files, extract relevant code segments using LLM analysis, and return structured markdown.
-    - Exception: If the user query is about generating something from scratch (new feature, documentation, or conceptual explanation), you can ignore the tool.
-
-3. Carefully analyze the provided API documentation:
+2. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
 
-4. Thoroughly read and understand the given query:
+3. Thoroughly read and understand the given query:
    - Identify the main requirements and objectives of the integration.
    - Determine which libraries, functions and their relevant records and types from the API documentation are needed to achieve the query and forget about unused API docs.
    - Note the libraries needed to achieve the query and plan the control flow of the application based on input and output parameters of each function of the connector according to the API documentation.
 
-5. Plan your code structure:
+4. Plan your code structure:
    - Decide which libraries need to be imported (Avoid importing lang.string, lang.boolean, lang.float, lang.decimal, lang.int, lang.map langlibs as they are already imported by default).
    - Determine the necessary client initialization.
    - Define Types needed for the query in the types.bal file.
    - Outline the service OR main function for the query.
-   - Outline the required function usages as noted in Step 4.
+   - Outline the required function usages as noted in Step 3.
    - Based on the types of identified functions, plan the data flow. Transform data as necessary.
 
-6. Generate the Ballerina code:
+5. Generate the Ballerina code:
    - Start with the required import statements.
    - Define required configurables for the query. Use only string, int, boolean types in configurable variables.
    - Initialize any necessary clients with the correct configuration at the module level(before any function or service declarations).
@@ -343,7 +135,7 @@ If the query requires code, follow these steps to generate the Ballerina code:
    - Do not invoke methods on json access expressions. Always use separate statements.
    - Use langlibs ONLY IF REQUIRED.
 
-7. Review and refine your code:
+6. Review and refine your code:
    - Check that all query requirements are met.
    - Verify that you're only using elements from the provided API documentation.
    - Ensure the code follows Ballerina best practices and conventions.
@@ -375,10 +167,6 @@ Important reminders:
 - For GraphQL service related queries, If the user haven't specified their own GraphQL Schema, Write the proposed GraphQL schema for the user query right after explanation before generating the ballerina code. Use same names as the GraphQL Schema when defining record types.
 
 Begin your response with the explanation, once the entire explanation is finished only, include codeblock segments(if any) in the end of the response.
-Also can you mention why you call or not call the tool
-If you feel like the given api docs are not enough for complete user user task, add this also.
-Its better to print the feedback in the below of your response also include why you use , not use the tool
-The explanation should explain the control flow along with the selected libraries and their functions.
 
 Each file which needs modifications, should have a codeblock segment and it MUST have complete file content with the proposed change.
 
@@ -401,7 +189,7 @@ async function main() {
         }
 
         // Run the code generator
-        const { text: response, tokenSummary } = await generateBallerinaCode(userQuery, [API_DOC]);
+        const response = await generateBallerinaCode(userQuery, [API_DOC]);
 
         // Ensure output directory
         const outputDir = path.join(process.cwd(), "poc");
@@ -414,43 +202,22 @@ async function main() {
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        // Final content with response + token usage
+        // Final content with response only
         const finalContent = `=== USER QUERY ===
 ${userQuery}
 
 === RESPONSE ===
 ${response}
-
-=== TOKEN USAGE ===
-Input Tokens: ${tokenSummary.inputTokens}
-Output Tokens: ${tokenSummary.outputTokens}
-Tool Call Tokens: ${tokenSummary.toolCallTokens}
-Total Counted Tokens: ${tokenSummary.totalTokens}
 `;
 
         // Save everything into one txt file
         fs.writeFileSync(outputPath, finalContent, "utf-8");
-        console.log(`\nMain execution output (including token usage) saved to ${outputPath}\n`);
+        console.log(`\nMain execution output saved to ${outputPath}\n`);
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
     }
 }
 
-
 main();
 
 export { generateBallerinaCode };
-
-function saveMarkdownToFile(mdResult: string, symbols: string[]): string {
-    const outputDir = path.join(process.cwd(), "code-extract");
-    if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-    }
-    const now = new Date();
-    const timestamp = now.toISOString().replace(/[:.]/g, "-");
-    const symbolsPart = symbols.length > 0 ? symbols.join("_") : "all";
-    const filename = `code_extract_${symbolsPart}_${timestamp}.md`;
-    const filePath = path.join(outputDir, filename);
-    fs.writeFileSync(filePath, mdResult, "utf-8");
-    return filePath;
-}

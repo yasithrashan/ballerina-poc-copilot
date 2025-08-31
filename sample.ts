@@ -1,5 +1,5 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
+import { ANTHROPIC_SONNET_4, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
@@ -98,7 +98,7 @@ async function generateBallerinaCode(
     const totalInputTokens = countTokens(systemPrompt) + userQueryTokens;
 
     const result = await generateText({
-        model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
+        model: anthropic(getAnthropicClinet(ANTHROPIC_SONNET_4)),
         messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userQuery },
@@ -190,8 +190,12 @@ If the query requires code, follow these steps to generate the Ballerina code:
 
     Rule:   After that, call the tool "extractRelevantCode" to get the actual code.
             Use the "extractFilePath" parameter that is provided by the environment / system (do not try to generate paths yourself).
-
             You must use the extractRelevantCode tool for get actual content.
+
+If extractRelevantCode does not return any results, it means there is no matching code context in the source files.
+In such cases, you must fall back to the bal.md file and generate the response entirely from scratch based on its contents.
+If the bal.md file also has no relevant context, then you must still create the response from scratch.
+Always remember: when no code context is available from either the source files or bal.md, you are responsible for producing the summary independently.
 
 2. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -323,7 +327,7 @@ ${formatTokenUsage(tokenUsage)}
 
 === GENERATION METADATA ===
 Generated At: ${now.toISOString()}
-Model Used: ${ANTHROPIC_HAIKU}
+Model Used: ${ANTHROPIC_SONNET_4}
 Max Output Tokens: 8192
 Step Count Limit: 25
 `;
@@ -338,7 +342,7 @@ Step Count Limit: 25
             timestamp: now.toISOString(),
             userQuery,
             tokenUsage,
-            model: ANTHROPIC_HAIKU,
+            model: ANTHROPIC_SONNET_4,
             maxOutputTokens: 8192,
             stepCountLimit: 25
         }, null, 2), "utf-8");

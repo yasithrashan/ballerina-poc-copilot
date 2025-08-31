@@ -82,10 +82,18 @@ async function main() {
 
     // Single LLM call to extract relevant content
     const systemPrompt = `
-You are a Ballerina code analyzer.
-Based on the user query and the bal.md documentation provided, extract the most relevant code segments from the .bal files.
-Focus on finding code that directly relates to the user's query.
-Return the extracted content in a clear, organized format.
+    You are a Ballerina Code Analyzer.
+    Your task is to process the provided bal.md documentation and the user’s query, then extract the most relevant code segments from the .bal files.
+
+    Instructions:
+
+    - Carefully read the user query.
+    - Check the bal.md documentation to understand which files and symbols are related.
+    - Extract only the directly relevant code segments (e.g., types, functions, services, resources) that are connected to the query.
+    - If there is no existing code that matches, return a clear statement such as:
+        "No relevant code segments found for this query."
+    - If there is related code (even if not an exact match), provide it for context.
+    - Present the extracted content in a clear, organized format, grouped by file.
 
 bal.md Documentation:
 ${balMdContent}
@@ -102,7 +110,7 @@ Please extract the relevant code segments that relate to the user query.
 
     try {
         const { text, toolResults } = await generateText({
-            model: anthropic('claude-3-5-haiku-20241022'),
+            model: anthropic('claude-3-7-sonnet-20250219'),
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },

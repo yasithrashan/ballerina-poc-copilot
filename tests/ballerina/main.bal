@@ -1,450 +1,715 @@
 import ballerina/http;
-import ballerina/time;
 import ballerina/io;
-import ballerina/uuid;
-import ballerinax/stripe;
+import ballerina/time;
 
 // Configuration
-configurable string stripeApiKey = ?;
+configurable string serverHost = "localhost";
 configurable int serverPort = 8080;
+configurable string ordersFilePath = "./data/orders.json";
+configurable string customersFilePath = "./data/customers.json";
+configurable string productsFilePath = "./data/products.json";
+configurable decimal taxRate = 0.08;
+configurable decimal shippingRate = 10.00;
 
-// Initialize Stripe client
-stripe:Client stripeClient = check new({
-    auth: {
-        token: stripeApiKey
-    }
-});
+// HTTP listener
+listener http:Listener httpListener = new (serverPort, config = {host: serverHost});
 
-// Data file paths
-const string ORDERS_FILE = "./data/orders.json";
-const string CUSTOMERS_FILE = "./data/customers.json";
-const string PRODUCTS_FILE = "./data/products.json";
-
-// HTTP service for order management
-service /orderManagement on new http:Listener(serverPort) {
-
-    // Create a new customer
-    resource function post customers(CustomerRequest customerRequest) returns Customer|ErrorResponse {
-        do {
-            // Create customer in Stripe
-            stripe:customers_body stripeCustomerRequest = {
-                name: customerRequest.name,
-                email: customerRequest.email,
-                phone: customerRequest.phone
-            };
-
-            stripe:Customer stripeCustomer = check stripeClient->/customers.post(payload = stripeCustomerRequest);
-
-            // Create local customer record
-            Customer customer = {
-                customerId: uuid:createType1AsString(),
-                name: customerRequest.name,
-                email: customerRequest.email,
-                phone: customerRequest.phone,
-                address: customerRequest.address,
-                stripeCustomerId: stripeCustomer.id,
-                createdAt: time:utcNow()
-            };
-
-            // Save customer locally
-            check saveCustomer(customer);
-
-            return customer;
-        } on fail error e {
-            return {
-                message: "Failed to create customer: " + e.message(),
-                errorCode: "CUSTOMER_CREATION_FAILED"
-            };
-        }
-    }
-
-    // Get all customers
-    resource function get customers() returns Customer[]|ErrorResponse {
-        do {
-            CustomerData customerData = check loadCustomers();
-            return customerData.customers;
-        } on fail error e {
-            return {
-                message: "Failed to retrieve customers: " + e.message(),
-                errorCode: "CUSTOMER_RETRIEVAL_FAILED"
-            };
-        }
-    }
-
-    // Create a new product
-    resource function post products(ProductRequest productRequest) returns Product|ErrorResponse {
-        do {
-            // Create product in Stripe
-            stripe:products_body stripeProductRequest = {
-                name: productRequest.name,
-                description: productRequest.description,
-                active: productRequest.active ?: true
-            };
-
-            stripe:Product stripeProduct = check stripeClient->/products.post(payload = stripeProductRequest);
-
-            // Create price in Stripe
-            stripe:prices_body stripePriceRequest = {
-                product: stripeProduct.id,
-                unit_amount: <int>(productRequest.price * 100), // Convert to cents
-                currency: "usd",
-                active: productRequest.active ?: true
-            };
-
-            stripe:Price stripePrice = check stripeClient->/prices.post(payload = stripePriceRequest);
-
-            // Create local product record
-            Product product = {
-                productId: uuid:createType1AsString(),
-                name: productRequest.name,
-                description: productRequest.description,
-                price: productRequest.price,
-                stripePriceId: stripePrice.id,
-                stripeProductId: stripeProduct.id,
-                active: productRequest.active ?: true,
-                stockQuantity: productRequest.stockQuantity
-            };
-
-            // Save product locally
-            check saveProduct(product);
-
-            return product;
-        } on fail error e {
-            return {
-                message: "Failed to create product: " + e.message(),
-                errorCode: "PRODUCT_CREATION_FAILED"
-            };
-        }
-    }
-
-    // Get all products
-    resource function get products() returns Product[]|ErrorResponse {
-        do {
-            ProductData productData = check loadProducts();
-            return productData.products;
-        } on fail error e {
-            return {
-                message: "Failed to retrieve products: " + e.message(),
-                errorCode: "PRODUCT_RETRIEVAL_FAILED"
-            };
-        }
-    }
+// Order Management Service
+service /api/v1 on httpListener {
 
     // Create a new order
-    resource function post orders(OrderRequest orderRequest) returns OrderResponse|ErrorResponse {
+    resource function post orders(CreateOrderRequest orderRequest) returns OrderResponse|http:BadRequest|http:InternalServerError {
         do {
             // Validate customer exists
             Customer? customer = check getCustomerById(orderRequest.customerId);
             if customer is () {
-                return {
-                    message: "Customer not found",
-                    errorCode: "CUSTOMER_NOT_FOUND"
+                return <http:BadRequest>{
+                    body: {
+                        success: false,
+                        message: "Customer not found",
+                        errorCode: "CUSTOMER_NOT_FOUND"
+                    }
                 };
             }
 
-            // Calculate total amount and validate products
-            decimal totalAmount = 0;
-            OrderItem[] validatedItems = [];
+            // Validate and calculate order items
+            OrderItem[] orderItems = [];
+            decimal subtotal = 0.0;
+            decimal totalWeight = 0.0;
 
-            foreach OrderItem item in orderRequest.items {
-                Product? product = check getProductById(item.productId);
+            foreach OrderItemRequest itemRequest in orderRequest.items {
+                Product? product = check getProductById(itemRequest.productId);
                 if product is () {
-                    return {
-                        message: "Product not found: " + item.productId,
-                        errorCode: "PRODUCT_NOT_FOUND"
+                    return <http:BadRequest>{
+                        body: {
+                            success: false,
+                            message: string `Product ${itemRequest.productId} not found`,
+                            errorCode: "PRODUCT_NOT_FOUND"
+                        }
                     };
                 }
 
-                if product.stockQuantity < item.quantity {
-                    return {
-                        message: "Insufficient stock for product: " + product.name,
-                        errorCode: "INSUFFICIENT_STOCK"
+                Product validProduct = <Product>product;
+
+                // Check stock availability
+                if validProduct.stockQuantity < itemRequest.quantity {
+                    return <http:BadRequest>{
+                        body: {
+                            success: false,
+                            message: string `Insufficient stock for product ${validProduct.name}`,
+                            errorCode: "INSUFFICIENT_STOCK"
+                        }
                     };
                 }
 
-                decimal itemTotal = product.price * item.quantity;
-                totalAmount += itemTotal;
+                decimal itemTotal = validProduct.price * <decimal>itemRequest.quantity;
+                decimal itemWeight = validProduct.weight * <decimal>itemRequest.quantity;
 
-                OrderItem validatedItem = {
-                    productId: item.productId,
-                    productName: product.name,
-                    quantity: item.quantity,
-                    unitPrice: product.price,
-                    totalPrice: itemTotal
+                OrderItem orderItem = {
+                    productId: validProduct.productId,
+                    productName: validProduct.name,
+                    quantity: itemRequest.quantity,
+                    unitPrice: validProduct.price,
+                    totalPrice: itemTotal,
+                    weight: itemWeight
                 };
-                validatedItems.push(validatedItem);
+
+                orderItems.push(orderItem);
+                subtotal += itemTotal;
+                totalWeight += itemWeight;
             }
+
+            // Calculate totals
+            decimal discountAmount = orderRequest.discountAmount ?: 0.0;
+            decimal taxAmount = (subtotal - discountAmount) * taxRate;
+            decimal shippingCost = calculateShippingCost(totalWeight);
+            decimal totalAmount = subtotal - discountAmount + taxAmount + shippingCost;
 
             // Create order
-            string orderId = uuid:createType1AsString();
-            Order 'order = {
+            time:Utc currentTime = time:utcNow();
+            string orderId = generateOrderId();
+
+            Order newOrder = {
                 orderId: orderId,
                 customerId: orderRequest.customerId,
-                items: validatedItems,
+                items: orderItems,
+                subtotal: subtotal,
+                taxAmount: taxAmount,
+                discountAmount: discountAmount,
+                shippingCost: shippingCost,
                 totalAmount: totalAmount,
-                status: "PENDING",
-                paymentStatus: "PENDING",
-                stripeInvoiceId: (),
-                stripeSubscriptionId: (),
-                createdAt: time:utcNow(),
-                updatedAt: (),
+                status: PENDING,
+                paymentStatus: PENDING,
                 shippingAddress: orderRequest.shippingAddress,
-                notes: orderRequest.notes
+                billingAddress: orderRequest.billingAddress,
+                notes: orderRequest.notes,
+                createdAt: currentTime,
+                updatedAt: currentTime,
+                shippedAt: (),
+                deliveredAt: (),
+                trackingNumber: ()
             };
 
-            // Handle subscription or one-time payment
-            if orderRequest.isSubscription ?: false {
-                check handleSubscriptionOrder('order, customer);
-            } else {
-                check handleOneTimeOrder('order, customer);
+            // Save order
+            check saveOrder(newOrder);
+
+            // Update product stock
+            foreach OrderItem item in orderItems {
+                check updateProductStock(item.productId, -item.quantity);
             }
 
-            // Save order locally
-            check saveOrder('order);
-
             return {
-                orderId: orderId,
+                success: true,
                 message: "Order created successfully",
-                status: 'order.status,
-                totalAmount: totalAmount
+                data: newOrder
             };
+
         } on fail error e {
-            return {
-                message: "Failed to create order: " + e.message(),
-                errorCode: "ORDER_CREATION_FAILED"
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to create order: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
             };
         }
     }
 
     // Get all orders
-    resource function get orders() returns Order[]|ErrorResponse {
+    resource function get orders(string? customerId = (), string? status = (), int 'limit = 50, int offset = 0)
+            returns OrderListResponse|http:InternalServerError {
         do {
-            OrderData orderData = check loadOrders();
-            return orderData.orders;
-        } on fail error e {
+            Order[] allOrders = check loadOrders();
+            Order[] filteredOrders = allOrders;
+
+            // Filter by customer ID
+            if customerId is string {
+                Order[] customerFilteredOrders = [];
+                foreach Order orderItem in filteredOrders {
+                    if orderItem.customerId == customerId {
+                        customerFilteredOrders.push(orderItem);
+                    }
+                }
+                filteredOrders = customerFilteredOrders;
+            }
+
+            // Filter by status
+            if status is string {
+                OrderStatus? orderStatus = getOrderStatusFromString(status);
+                if orderStatus is OrderStatus {
+                    Order[] statusFilteredOrders = [];
+                    foreach Order orderItem in filteredOrders {
+                        if orderItem.status == orderStatus {
+                            statusFilteredOrders.push(orderItem);
+                        }
+                    }
+                    filteredOrders = statusFilteredOrders;
+                }
+            }
+
+            // Apply pagination
+            int totalCount = filteredOrders.length();
+            int endIndex = offset + 'limit;
+            if endIndex > totalCount {
+                endIndex = totalCount;
+            }
+
+            Order[] paginatedOrders = [];
+            if offset < totalCount {
+                paginatedOrders = filteredOrders.slice(offset, endIndex);
+            }
+
             return {
-                message: "Failed to retrieve orders: " + e.message(),
-                errorCode: "ORDER_RETRIEVAL_FAILED"
+                success: true,
+                message: "Orders retrieved successfully",
+                data: paginatedOrders,
+                totalCount: totalCount
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve orders: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
             };
         }
     }
 
     // Get order by ID
-    resource function get orders/[string orderId]() returns Order|ErrorResponse {
+    resource function get orders/[string orderId]() returns OrderResponse|http:NotFound|http:InternalServerError {
         do {
-            Order? 'order = check getOrderById(orderId);
-            if 'order is () {
-                return {
-                    message: "Order not found",
-                    errorCode: "ORDER_NOT_FOUND"
+            Order? orderData = check getOrderById(orderId);
+            if orderData is () {
+                return <http:NotFound>{
+                    body: {
+                        success: false,
+                        message: "Order not found",
+                        errorCode: "ORDER_NOT_FOUND"
+                    }
                 };
             }
-            return 'order;
-        } on fail error e {
+
             return {
-                message: "Failed to retrieve order: " + e.message(),
-                errorCode: "ORDER_RETRIEVAL_FAILED"
+                success: true,
+                message: "Order retrieved successfully",
+                data: orderData
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve order: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
             };
         }
     }
 
-    // Update order status
-    resource function put orders/[string orderId]/status(record {| OrderStatus status; |} statusUpdate) returns Order|ErrorResponse {
+    // Update order
+    resource function put orders/[string orderId](UpdateOrderRequest updateRequest)
+            returns OrderResponse|http:NotFound|http:BadRequest|http:InternalServerError {
         do {
             Order? existingOrder = check getOrderById(orderId);
             if existingOrder is () {
-                return {
-                    message: "Order not found",
-                    errorCode: "ORDER_NOT_FOUND"
+                return <http:NotFound>{
+                    body: {
+                        success: false,
+                        message: "Order not found",
+                        errorCode: "ORDER_NOT_FOUND"
+                    }
                 };
             }
 
+            Order currentOrder = <Order>existingOrder;
+            time:Utc currentTime = time:utcNow();
+
+            // Determine new values
+            OrderStatus newStatus = updateRequest.status ?: currentOrder.status;
+            PaymentStatus newPaymentStatus = updateRequest.paymentStatus ?: currentOrder.paymentStatus;
+            string? newTrackingNumber = updateRequest.trackingNumber ?: currentOrder.trackingNumber;
+            string? newNotes = updateRequest.notes ?: currentOrder.notes;
+
+            // Determine shipped/delivered timestamps
+            time:Utc? newShippedAt = currentOrder.shippedAt;
+            time:Utc? newDeliveredAt = currentOrder.deliveredAt;
+
+            if updateRequest.status == SHIPPED && currentOrder.status != SHIPPED {
+                newShippedAt = currentTime;
+            }
+            if updateRequest.status == DELIVERED && currentOrder.status != DELIVERED {
+                newDeliveredAt = currentTime;
+            }
+
+            // Create updated order
             Order updatedOrder = {
-                orderId: existingOrder.orderId,
-                customerId: existingOrder.customerId,
-                items: existingOrder.items,
-                totalAmount: existingOrder.totalAmount,
-                status: statusUpdate.status,
-                paymentStatus: existingOrder.paymentStatus,
-                stripeInvoiceId: existingOrder.stripeInvoiceId,
-                stripeSubscriptionId: existingOrder.stripeSubscriptionId,
-                createdAt: existingOrder.createdAt,
-                updatedAt: time:utcNow(),
-                shippingAddress: existingOrder.shippingAddress,
-                notes: existingOrder.notes
+                orderId: currentOrder.orderId,
+                customerId: currentOrder.customerId,
+                items: currentOrder.items,
+                subtotal: currentOrder.subtotal,
+                taxAmount: currentOrder.taxAmount,
+                discountAmount: currentOrder.discountAmount,
+                shippingCost: currentOrder.shippingCost,
+                totalAmount: currentOrder.totalAmount,
+                status: newStatus,
+                paymentStatus: newPaymentStatus,
+                shippingAddress: currentOrder.shippingAddress,
+                billingAddress: currentOrder.billingAddress,
+                notes: newNotes,
+                createdAt: currentOrder.createdAt,
+                updatedAt: currentTime,
+                shippedAt: newShippedAt,
+                deliveredAt: newDeliveredAt,
+                trackingNumber: newTrackingNumber
             };
 
+            // Save updated order
             check updateOrder(updatedOrder);
-            return updatedOrder;
-        } on fail error e {
+
             return {
-                message: "Failed to update order status: " + e.message(),
-                errorCode: "ORDER_UPDATE_FAILED"
+                success: true,
+                message: "Order updated successfully",
+                data: updatedOrder
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to update order: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    // Cancel order
+    resource function delete orders/[string orderId]() returns OrderResponse|http:NotFound|http:BadRequest|http:InternalServerError {
+        do {
+            Order? existingOrder = check getOrderById(orderId);
+            if existingOrder is () {
+                return <http:NotFound>{
+                    body: {
+                        success: false,
+                        message: "Order not found",
+                        errorCode: "ORDER_NOT_FOUND"
+                    }
+                };
+            }
+
+            Order currentOrder = <Order>existingOrder;
+
+            // Check if order can be cancelled
+            if currentOrder.status == SHIPPED || currentOrder.status == DELIVERED {
+                return <http:BadRequest>{
+                    body: {
+                        success: false,
+                        message: "Cannot cancel shipped or delivered order",
+                        errorCode: "INVALID_ORDER_STATUS"
+                    }
+                };
+            }
+
+            // Create cancelled order
+            Order cancelledOrder = {
+                orderId: currentOrder.orderId,
+                customerId: currentOrder.customerId,
+                items: currentOrder.items,
+                subtotal: currentOrder.subtotal,
+                taxAmount: currentOrder.taxAmount,
+                discountAmount: currentOrder.discountAmount,
+                shippingCost: currentOrder.shippingCost,
+                totalAmount: currentOrder.totalAmount,
+                status: CANCELLED,
+                paymentStatus: currentOrder.paymentStatus,
+                shippingAddress: currentOrder.shippingAddress,
+                billingAddress: currentOrder.billingAddress,
+                notes: currentOrder.notes,
+                createdAt: currentOrder.createdAt,
+                updatedAt: time:utcNow(),
+                shippedAt: currentOrder.shippedAt,
+                deliveredAt: currentOrder.deliveredAt,
+                trackingNumber: currentOrder.trackingNumber
+            };
+
+            check updateOrder(cancelledOrder);
+
+            // Restore product stock
+            foreach OrderItem item in currentOrder.items {
+                check updateProductStock(item.productId, item.quantity);
+            }
+
+            return {
+                success: true,
+                message: "Order cancelled successfully",
+                data: cancelledOrder
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to cancel order: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    // Get order statistics
+    resource function get orders/statistics() returns json|http:InternalServerError {
+        do {
+            Order[] allOrders = check loadOrders();
+
+            int totalOrders = allOrders.length();
+
+            int pendingOrders = 0;
+            int confirmedOrders = 0;
+            int shippedOrders = 0;
+            int deliveredOrders = 0;
+            int cancelledOrders = 0;
+
+            foreach Order orderItem in allOrders {
+                if orderItem.status == PENDING {
+                    pendingOrders += 1;
+                } else if orderItem.status == CONFIRMED {
+                    confirmedOrders += 1;
+                } else if orderItem.status == SHIPPED {
+                    shippedOrders += 1;
+                } else if orderItem.status == DELIVERED {
+                    deliveredOrders += 1;
+                } else if orderItem.status == CANCELLED {
+                    cancelledOrders += 1;
+                }
+            }
+
+            decimal totalRevenue = 0.0;
+            foreach Order orderItem in allOrders {
+                if orderItem.status != CANCELLED {
+                    totalRevenue += orderItem.totalAmount;
+                }
+            }
+
+            decimal averageOrderValue = totalOrders > 0 ? totalRevenue / <decimal>totalOrders : 0.0;
+
+            OrderStatistics stats = {
+                totalOrders: totalOrders,
+                pendingOrders: pendingOrders,
+                confirmedOrders: confirmedOrders,
+                shippedOrders: shippedOrders,
+                deliveredOrders: deliveredOrders,
+                cancelledOrders: cancelledOrders,
+                totalRevenue: totalRevenue,
+                averageOrderValue: averageOrderValue
+            };
+
+            return {
+                success: true,
+                message: "Statistics retrieved successfully",
+                data: stats
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve statistics: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    // Customer management endpoints
+    resource function get customers() returns json|http:InternalServerError {
+        do {
+            Customer[] customers = check loadCustomers();
+            return {
+                success: true,
+                message: "Customers retrieved successfully",
+                data: customers,
+                totalCount: customers.length()
+            };
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve customers: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    resource function get customers/[string customerId]() returns CustomerResponse|http:NotFound|http:InternalServerError {
+        do {
+            Customer? customer = check getCustomerById(customerId);
+            if customer is () {
+                return <http:NotFound>{
+                    body: {
+                        success: false,
+                        message: "Customer not found",
+                        errorCode: "CUSTOMER_NOT_FOUND"
+                    }
+                };
+            }
+
+            return {
+                success: true,
+                message: "Customer retrieved successfully",
+                data: customer
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve customer: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    // Product management endpoints
+    resource function get products() returns ProductListResponse|http:InternalServerError {
+        do {
+            Product[] products = check loadProducts();
+            return {
+                success: true,
+                message: "Products retrieved successfully",
+                data: products,
+                totalCount: products.length()
+            };
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve products: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
+            };
+        }
+    }
+
+    resource function get products/[string productId]() returns ProductResponse|http:NotFound|http:InternalServerError {
+        do {
+            Product? product = check getProductById(productId);
+            if product is () {
+                return <http:NotFound>{
+                    body: {
+                        success: false,
+                        message: "Product not found",
+                        errorCode: "PRODUCT_NOT_FOUND"
+                    }
+                };
+            }
+
+            return {
+                success: true,
+                message: "Product retrieved successfully",
+                data: product
+            };
+
+        } on fail error e {
+            return <http:InternalServerError>{
+                body: {
+                    success: false,
+                    message: "Failed to retrieve product: " + e.message(),
+                    errorCode: "INTERNAL_ERROR"
+                }
             };
         }
     }
 }
 
-// Helper functions for data management
-function saveCustomer(Customer customer) returns error? {
-    CustomerData customerData;
-    do {
-        customerData = check loadCustomers();
-    } on fail {
-        customerData = {customers: []};
+// Utility functions
+function generateOrderId() returns string {
+    time:Utc currentTime = time:utcNow();
+    int timestamp = <int>currentTime[0];
+    return string `ORD-${timestamp}`;
+}
+
+function calculateShippingCost(decimal weight) returns decimal {
+    decimal weightLimit = 1.0;
+    if weight <= weightLimit {
+        return shippingRate;
+    } else {
+        return shippingRate + ((weight - weightLimit) * 2.0);
     }
-    customerData.customers.push(customer);
-    check io:fileWriteJson(path = CUSTOMERS_FILE, content = customerData);
 }
 
-function saveProduct(Product product) returns error? {
-    ProductData productData;
-    do {
-        productData = check loadProducts();
-    } on fail {
-        productData = {products: []};
-    }
-    productData.products.push(product);
-    check io:fileWriteJson(path = PRODUCTS_FILE, content = productData);
-}
-
-function saveOrder(Order 'order) returns error? {
-    OrderData orderData;
-    do {
-        orderData = check loadOrders();
-    } on fail {
-        orderData = {orders: []};
-    }
-    orderData.orders.push('order);
-    check io:fileWriteJson(path = ORDERS_FILE, content = orderData);
-}
-
-function loadCustomers() returns CustomerData|error {
-    json customerJson = check io:fileReadJson(path = CUSTOMERS_FILE);
-    return customerJson.cloneWithType(CustomerData);
-}
-
-function loadProducts() returns ProductData|error {
-    json productJson = check io:fileReadJson(path = PRODUCTS_FILE);
-    return productJson.cloneWithType(ProductData);
-}
-
-function loadOrders() returns OrderData|error {
-    json orderJson = check io:fileReadJson(path = ORDERS_FILE);
-    return orderJson.cloneWithType(OrderData);
-}
-
-function getCustomerById(string customerId) returns Customer|error? {
-    do {
-        CustomerData customerData = check loadCustomers();
-        foreach Customer customer in customerData.customers {
-            if customer.customerId == customerId {
-                return customer;
-            }
-        }
-        return ();
-    } on fail {
+function getOrderStatusFromString(string status) returns OrderStatus? {
+    string lowerStatus = status.toLowerAscii();
+    if lowerStatus == "pending" {
+        return PENDING;
+    } else if lowerStatus == "confirmed" {
+        return CONFIRMED;
+    } else if lowerStatus == "processing" {
+        return PROCESSING;
+    } else if lowerStatus == "shipped" {
+        return SHIPPED;
+    } else if lowerStatus == "delivered" {
+        return DELIVERED;
+    } else if lowerStatus == "cancelled" {
+        return CANCELLED;
+    } else {
         return ();
     }
 }
 
-function getProductById(string productId) returns Product|error? {
-    do {
-        ProductData productData = check loadProducts();
-        foreach Product product in productData.products {
-            if product.productId == productId {
-                return product;
-            }
-        }
-        return ();
-    } on fail {
-        return ();
+// Data access functions
+function loadOrders() returns Order[]|error {
+    json|io:Error result = io:fileReadJson(ordersFilePath);
+    if result is io:Error {
+        // Return empty array if file doesn't exist
+        return [];
     }
+
+    OrderDatabase|error database = result.cloneWithType(OrderDatabase);
+    if database is error {
+        return [];
+    }
+
+    return database.orders;
 }
 
-function getOrderById(string orderId) returns Order|error? {
-    do {
-        OrderData orderData = check loadOrders();
-        foreach Order 'order in orderData.orders {
-            if 'order.orderId == orderId {
-                return 'order;
-            }
-        }
-        return ();
-    } on fail {
-        return ();
-    }
+function saveOrder(Order newOrder) returns error? {
+    Order[] orders = check loadOrders();
+    orders.push(newOrder);
+
+    OrderDatabase database = {orders: orders};
+    check io:fileWriteJson(ordersFilePath, database.toJson());
 }
 
 function updateOrder(Order updatedOrder) returns error? {
-    OrderData orderData = check loadOrders();
-    foreach int i in 0 ..< orderData.orders.length() {
-        if orderData.orders[i].orderId == updatedOrder.orderId {
-            orderData.orders[i] = updatedOrder;
+    Order[] orders = check loadOrders();
+
+    foreach int i in 0 ..< orders.length() {
+        if orders[i].orderId == updatedOrder.orderId {
+            orders[i] = updatedOrder;
             break;
         }
     }
-    check io:fileWriteJson(path = ORDERS_FILE, content = orderData);
+
+    OrderDatabase database = {orders: orders};
+    check io:fileWriteJson(ordersFilePath, database.toJson());
 }
 
-function handleOneTimeOrder(Order 'order, Customer customer) returns error? {
-    string stripeCustomerId = customer.stripeCustomerId ?: "";
+function getOrderById(string orderId) returns Order?|error {
+    Order[] orders = check loadOrders();
 
-    // Create invoice in Stripe for one-time payment
-    stripe:invoices_body invoiceRequest = {
-        customer: stripeCustomerId,
-        collection_method: "charge_automatically",
-        auto_advance: true
-    };
-
-    stripe:Invoice invoice = check stripeClient->/invoices.post(payload = invoiceRequest);
-
-    // Add invoice items for each order item
-    foreach OrderItem item in 'order.items {
-        Product? product = check getProductById(item.productId);
-        if product is Product {
-            stripe:invoiceitems_body invoiceItemRequest = {
-                customer: stripeCustomerId,
-                invoice: invoice.id,
-                amount: <int>(item.totalPrice * 100), // Convert to cents
-                currency: "usd",
-                description: item.productName
-            };
-
-            stripe:Invoiceitem _ = check stripeClient->/invoiceitems.post(payload = invoiceItemRequest);
+    foreach Order orderItem in orders {
+        if orderItem.orderId == orderId {
+            return orderItem;
         }
     }
 
-    'order.stripeInvoiceId = invoice.id;
-    'order.status = "CONFIRMED";
+    return ();
 }
 
-function handleSubscriptionOrder(Order 'order, Customer customer) returns error? {
-    string stripeCustomerId = customer.stripeCustomerId ?: "";
+function loadCustomers() returns Customer[]|error {
+    json|io:Error result = io:fileReadJson(customersFilePath);
+    if result is io:Error {
+        return [];
+    }
 
-    // Create subscription for recurring orders
-    stripe:subscription_item_create_params[] subscriptionItems = [];
+    CustomerDatabase|error database = result.cloneWithType(CustomerDatabase);
+    if database is error {
+        return [];
+    }
 
-    foreach OrderItem item in 'order.items {
-        Product? product = check getProductById(item.productId);
-        if product is Product {
-            string stripePriceId = product.stripePriceId ?: "";
-            stripe:subscription_item_create_params subscriptionItem = {
-                price: stripePriceId,
-                quantity: item.quantity
-            };
-            subscriptionItems.push(subscriptionItem);
+    return database.customers;
+}
+
+function getCustomerById(string customerId) returns Customer?|error {
+    Customer[] customers = check loadCustomers();
+
+    foreach Customer customer in customers {
+        if customer.customerId == customerId {
+            return customer;
         }
     }
 
-    stripe:subscriptions_body subscriptionRequest = {
-        customer: stripeCustomerId,
-        items: subscriptionItems,
-        collection_method: "charge_automatically"
-    };
+    return ();
+}
 
-    stripe:Subscription subscription = check stripeClient->/subscriptions.post(payload = subscriptionRequest);
+function loadProducts() returns Product[]|error {
+    json|io:Error result = io:fileReadJson(productsFilePath);
+    if result is io:Error {
+        return [];
+    }
 
-    'order.stripeSubscriptionId = subscription.id;
-    'order.status = "CONFIRMED";
+    ProductDatabase|error database = result.cloneWithType(ProductDatabase);
+    if database is error {
+        return [];
+    }
+
+    return database.products;
+}
+
+function getProductById(string productId) returns Product?|error {
+    Product[] products = check loadProducts();
+
+    foreach Product product in products {
+        if product.productId == productId {
+            return product;
+        }
+    }
+
+    return ();
+}
+
+function updateProductStock(string productId, int quantityChange) returns error? {
+    Product[] products = check loadProducts();
+
+    foreach int i in 0 ..< products.length() {
+        if products[i].productId == productId {
+            Product currentProduct = products[i];
+            int newStockQuantity = currentProduct.stockQuantity + quantityChange;
+            time:Utc newUpdatedAt = time:utcNow();
+
+            Product updatedProduct = {
+                productId: currentProduct.productId,
+                name: currentProduct.name,
+                description: currentProduct.description,
+                category: currentProduct.category,
+                price: currentProduct.price,
+                stockQuantity: newStockQuantity,
+                weight: currentProduct.weight,
+                tags: currentProduct.tags,
+                isActive: currentProduct.isActive,
+                createdAt: currentProduct.createdAt,
+                updatedAt: newUpdatedAt
+            };
+
+            products[i] = updatedProduct;
+            break;
+        }
+    }
+
+    ProductDatabase database = {products: products};
+    check io:fileWriteJson(productsFilePath, database.toJson());
 }

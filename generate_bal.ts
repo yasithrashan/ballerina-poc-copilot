@@ -148,6 +148,7 @@ Then for each file, follow this EXACT structure:
 8. **Types**: Extract all record types, enums, and custom type definitions with their exact field names and types
 
 **IMPORTANT:**
+- Analyze the source code for any errors, but do not modify or fix them.
 - Preserve exact variable names, type names, and paths from the code
 - Include actual default values for configurable variables
 - Always include **all functions**, even if they have no comments
@@ -159,7 +160,7 @@ Then for each file, follow this EXACT structure:
 
     // Send request to the LLM
     const response = await generateText({
-        model: anthropic('claude-3-7-sonnet-20250219'),
+        model: anthropic('claude-sonnet-4-20250514'),
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: JSON.stringify(balFiles, null, 2) }

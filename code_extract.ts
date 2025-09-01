@@ -95,6 +95,7 @@ async function main() {
         "No relevant code segments found for this query."
     - If there is related code (even if not an exact match), provide it for context.
     - Present the extracted content in a clear, organized format, grouped by file.
+    - Only provide the original code. Do not suggest replacements or modifications.
 
 bal.md Documentation:
 ${balMdContent}
@@ -111,7 +112,7 @@ Please extract the relevant code segments that relate to the user query.
 
     try {
         const { text, toolResults } = await generateText({
-            model: anthropic('claude-3-7-sonnet-20250219'),
+            model: anthropic('claude-3-5-sonnet-20240620'),
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt },

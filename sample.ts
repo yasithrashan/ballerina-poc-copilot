@@ -1,5 +1,5 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_SONNET_4, getAnthropicClinet } from "./connection";
+import { ANTHROPIC_HAIKU, ANTHROPIC_SONNET_4, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
@@ -68,7 +68,7 @@ const extractRelevantCode = tool({
 async function countTokensWithAPI(text: string, anthropicClient: Anthropic): Promise<number> {
     try {
         const response = await anthropicClient.messages.countTokens({
-            model: ANTHROPIC_SONNET_4,
+            model: ANTHROPIC_HAIKU,
             messages: [{ role: "user", content: text }]
         });
         return response.input_tokens;
@@ -114,7 +114,7 @@ async function generateBallerinaCode(
     const totalInputTokens = await countTokensWithAPI(systemPrompt + "\n\n" + userQuery, anthropicClient);
 
     const result = await generateText({
-        model: anthropic(getAnthropicClinet(ANTHROPIC_SONNET_4)),
+        model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userQuery },
@@ -343,7 +343,7 @@ ${formatTokenUsage(tokenUsage)}
 
 === GENERATION METADATA ===
 Generated At: ${now.toISOString()}
-Model Used: ${ANTHROPIC_SONNET_4}
+Model Used: ${ANTHROPIC_HAIKU}
 Max Output Tokens: 8192
 Step Count Limit: 25
 `;
@@ -358,7 +358,7 @@ Step Count Limit: 25
             timestamp: now.toISOString(),
             userQuery,
             tokenUsage,
-            model: ANTHROPIC_SONNET_4,
+            model: ANTHROPIC_HAIKU,
             maxOutputTokens: 8192,
             stepCountLimit: 25
         }, null, 2), "utf-8");

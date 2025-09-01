@@ -90,6 +90,7 @@ async function main() {
     - Carefully read the user query.
     - Check the bal.md documentation to understand which files and symbols are related.
     - Extract only the directly relevant code segments (e.g., types, functions, services, resources) that are connected to the query.
+    - Rule: Only Include Filename and the code segment only.
     - If there is no existing code that matches, return a clear statement such as:
         "No relevant code segments found for this query."
     - If there is related code (even if not an exact match), provide it for context.

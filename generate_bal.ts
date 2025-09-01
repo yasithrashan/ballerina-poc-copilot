@@ -159,7 +159,7 @@ Then for each file, follow this EXACT structure:
 
     // Send request to the LLM
     const response = await generateText({
-        model: anthropic('claude-3-5-haiku-20241022'),
+        model: anthropic('claude-3-7-sonnet-20250219'),
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: JSON.stringify(balFiles, null, 2) }

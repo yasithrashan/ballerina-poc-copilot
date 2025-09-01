@@ -1,11 +1,12 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
+import { ANTHROPIC_SONNET_4, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { z } from "zod"
+import { z } from "zod";
+import { Anthropic } from "@anthropic-ai/sdk";
 
 // Token usage tracking interface
 interface TokenUsage {
@@ -16,13 +17,6 @@ interface TokenUsage {
     extractCodeTokens: number;
     totalInputTokens: number;
     outputTokens: number;
-}
-
-// Simple token counting function (approximate)
-function countTokens(text: string): number {
-    // Rough approximation: 1 token ≈ 4 characters for English text
-    // This is a simplified approach; for more accuracy, you'd use a proper tokenizer
-    return Math.ceil(text.length / 4);
 }
 
 // Get the API DOCS
@@ -70,7 +64,22 @@ const extractRelevantCode = tool({
     }
 });
 
-// Generate Ballerina code function with token tracking
+// Real token counting using Anthropic's official API
+async function countTokensWithAPI(text: string, anthropicClient: Anthropic): Promise<number> {
+    try {
+        const response = await anthropicClient.messages.countTokens({
+            model: ANTHROPIC_SONNET_4,
+            messages: [{ role: "user", content: text }]
+        });
+        return response.input_tokens;
+    } catch (error) {
+        console.warn("Token counting API failed, falling back to approximation:", error);
+        // Fallback to rough approximation
+        return Math.ceil(text.length / 4);
+    }
+}
+
+// Generate Ballerina code function with real token tracking
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
@@ -81,24 +90,31 @@ async function generateBallerinaCode(
 
     console.log("Generating Code...");
 
-    // Calculate token usage for different components
-    const userQueryTokens = countTokens(userQuery);
-    const langLibsTokens = countTokens(JSON.stringify(LANG_LIB));
-    const apiDocsTokens = countTokens(JSON.stringify(API_DOC));
-    const balMdTokens = countTokens(balMdContent);
+    // Create Anthropic client for token counting
+    const anthropicClient = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    // Calculate real token usage using Anthropic's API
+    console.log("Counting tokens using Anthropic's official API...");
+    const userQueryTokens = await countTokensWithAPI(userQuery, anthropicClient);
+    const langLibsTokens = await countTokensWithAPI(JSON.stringify(LANG_LIB), anthropicClient);
+    const apiDocsTokens = await countTokensWithAPI(JSON.stringify(API_DOC), anthropicClient);
+    const balMdTokens = await countTokensWithAPI(balMdContent, anthropicClient);
 
     // Get extract code content for token counting
     let extractCodeTokens = 0;
     const extractFilePath = process.env.EXTRACT_FILE_PATH;
     if (extractFilePath && fs.existsSync(extractFilePath)) {
         const extractContent = fs.readFileSync(extractFilePath, "utf-8");
-        extractCodeTokens = countTokens(extractContent);
+        extractCodeTokens = await countTokensWithAPI(extractContent, anthropicClient);
     }
 
-    const totalInputTokens = countTokens(systemPrompt) + userQueryTokens;
+    // Count tokens for the complete message that will be sent to the API
+    const totalInputTokens = await countTokensWithAPI(systemPrompt + "\n\n" + userQuery, anthropicClient);
 
     const result = await generateText({
-        model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
+        model: anthropic(getAnthropicClinet(ANTHROPIC_SONNET_4)),
         messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userQuery },
@@ -108,7 +124,7 @@ async function generateBallerinaCode(
         maxOutputTokens: 8192,
     });
 
-    const outputTokens = countTokens(result.text);
+    const outputTokens = await countTokensWithAPI(result.text, anthropicClient);
 
     const tokenUsage: TokenUsage = {
         userQueryTokens,
@@ -190,8 +206,12 @@ If the query requires code, follow these steps to generate the Ballerina code:
 
     Rule:   After that, call the tool "extractRelevantCode" to get the actual code.
             Use the "extractFilePath" parameter that is provided by the environment / system (do not try to generate paths yourself).
-
             You must use the extractRelevantCode tool for get actual content.
+
+If extractRelevantCode does not return any results, it means there is no matching code context in the source files.
+In such cases, you must fall back to the bal.md file and generate the response entirely from scratch based on its contents.
+If the bal.md file also has no relevant context, then you must still create the response from scratch.
+Always remember: when no code context is available from either the source files or bal.md, you are responsible for producing the summary independently.
 
 2. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -293,9 +313,9 @@ async function main() {
             process.exit(1);
         }
 
-        console.log("Starting Ballerina code generation with token tracking...");
+        console.log("Starting Ballerina code generation with Anthropic's official token counting...");
 
-        // Run the code generator with token tracking
+        // Run the code generator with real token tracking
         const { response, tokenUsage } = await generateBallerinaCode(userQuery, [API_DOC]);
 
         // Log token usage to console
@@ -323,7 +343,7 @@ ${formatTokenUsage(tokenUsage)}
 
 === GENERATION METADATA ===
 Generated At: ${now.toISOString()}
-Model Used: ${ANTHROPIC_HAIKU}
+Model Used: ${ANTHROPIC_SONNET_4}
 Max Output Tokens: 8192
 Step Count Limit: 25
 `;
@@ -338,7 +358,7 @@ Step Count Limit: 25
             timestamp: now.toISOString(),
             userQuery,
             tokenUsage,
-            model: ANTHROPIC_HAIKU,
+            model: ANTHROPIC_SONNET_4,
             maxOutputTokens: 8192,
             stepCountLimit: 25
         }, null, 2), "utf-8");

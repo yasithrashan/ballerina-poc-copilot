@@ -1,6 +1,6 @@
 # POC: Ballerina Copilot for Agentic Codebase Indexing
 
-An intelligent AI-powered tool that generates Ballerina code based on user queries, leveraging API documentation and project context to create accurate, functional code. Now includes automated project documentation generation capabilities.
+An intelligent AI-powered tool that generates Ballerina code based on user queries, leveraging API documentation and project context to create accurate, functional code. Includes automated project documentation generation and intelligent code extraction capabilities.
 
 ## Features
 
@@ -10,6 +10,15 @@ An intelligent AI-powered tool that generates Ballerina code based on user queri
 - **Intelligent Code Extraction**: Extracts relevant code segments from existing files
 - **Project-Specific Guidelines**: Incorporates project summary (bal.md) for tailored code generation
 - **Automated Documentation**: Generates comprehensive project summaries (bal.md) from existing Ballerina codebases
+- **Real Token Tracking**: Uses Anthropic's official API for accurate token counting and cost monitoring
+
+## Architecture
+
+The tool consists of three main components:
+
+1. **Code Generator** (`index.ts`) - Main AI-powered code generation engine
+2. **Documentation Generator** (`generate-balmd.ts`) - Automated project documentation creator
+3. **Code Extractor** (`extract-relevant-code.ts`) - Intelligent code segment extraction tool
 
 ## Prerequisites
 
@@ -28,14 +37,12 @@ bun install
 
 3. Install required packages:
 ```bash
-bun add ai @ai-sdk/anthropic zod
+bun add ai @ai-sdk/anthropic zod @anthropic-ai/sdk
 ```
 
 ## Environment Variables
 
-### For Code Generation
-
-Create a `.env` file with the following variables:
+### For Code Generation (`index.ts`)
 
 ```env
 # Required for Code Generation
@@ -44,9 +51,12 @@ BAL_MD_PATH=/path/to/project/bal.md
 PROJECT_PATH=/path/to/ballerina/project
 USER_QUERY="Your code generation query here"
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Optional for code extraction
+EXTRACT_FILE_PATH=/path/to/extracted/code.md
 ```
 
-### For Documentation Generation
+### For Documentation Generation (`generate-balmd.ts`)
 
 ```env
 # Required for bal.md Generation
@@ -54,33 +64,72 @@ BAL_PROJECT_PATH=/path/to/ballerina/project
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
+### For Code Extraction (`extract-relevant-code.ts`)
+
+```env
+# Required for Code Extraction
+PROJECT_PATH=/path/to/ballerina/project
+BAL_MD_PATH=/path/to/project/bal.md
+USER_QUERY="Query describing what code to extract"
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+```
+
 ### Environment Variable Details
 
 - **API_DOC_JSON**: Path to JSON file containing Ballerina API documentation
 - **BAL_MD_PATH**: Path to project summary markdown file (bal.md)
-- **PROJECT_PATH**: Root directory of your Ballerina project containing .bal files (for code generation)
+- **PROJECT_PATH**: Root directory of your Ballerina project containing .bal files
 - **BAL_PROJECT_PATH**: Root directory of your Ballerina project (for documentation generation)
-- **USER_QUERY**: The query describing what code you want to generate
+- **USER_QUERY**: The query describing what code you want to generate or extract
 - **ANTHROPIC_API_KEY**: Your Anthropic API key for Claude access
+- **EXTRACT_FILE_PATH**: Optional path to manually extracted code file
 
 ## Usage
 
-### Code Generation
-
-```bash
-bun start
-```
-
-### Documentation Generation
+### 1. Documentation Generation
 
 Generate a comprehensive project summary (bal.md) from your existing Ballerina codebase:
 
 ```bash
-bun run generate-balmd
+bun run generate-balmd.ts
 ```
 
-### Example Code Generation Queries
+### 2. Code Extraction
 
+Extract relevant code segments based on your query:
+
+```bash
+bun run extract-relevant-code.ts
+```
+
+### 3. Code Generation
+
+Generate new Ballerina code based on your requirements:
+
+```bash
+bun run index.ts
+```
+
+### Recommended Workflow
+
+1. **Start with Documentation Generation**:
+   ```bash
+   BAL_PROJECT_PATH=/path/to/your/project bun run generate-balmd.ts
+   ```
+
+2. **Extract Relevant Code Context** (if modifying existing code):
+   ```bash
+   PROJECT_PATH=/path/to/your/project BAL_MD_PATH=/path/to/generated/bal.md USER_QUERY="Your extraction query" bun run extract-relevant-code.ts
+   ```
+
+3. **Generate Code**:
+   ```bash
+   BAL_MD_PATH=/path/to/generated/bal.md EXTRACT_FILE_PATH=/path/to/extracted/code.md USER_QUERY="Your generation query" bun run index.ts
+   ```
+
+## Example Queries
+
+### Code Generation Queries
 ```bash
 # Generate a REST API service
 USER_QUERY="Create a REST API service for user management with CRUD operations"
@@ -92,46 +141,73 @@ USER_QUERY="Create a function to connect to MySQL database and fetch user data"
 USER_QUERY="Create a GraphQL service for product management"
 ```
 
+### Code Extraction Queries
+```bash
+# Extract user-related functions
+USER_QUERY="Find all functions related to user authentication and validation"
+
+# Extract database operations
+USER_QUERY="Extract all database connection and query functions"
+```
+
 ## How It Works
 
-### 1. Documentation Generation (bal.md)
-The `generateBalMd` function:
+### 1. Documentation Generation (`generate-balmd.ts`)
 - Recursively scans all `.bal` files in the project directory
-- Analyzes each file's structure and content using Claude
+- Analyzes each file's structure and content using Claude Sonnet 4
 - Generates a comprehensive markdown summary organized by:
-  - File-level imports
-  - Configurable level variables
+  - Project overview and file listing
+  - File-level imports and configurations
   - Module level variables
   - Type definitions (records, enums)
-  - Function definitions
-  - Service definitions
+  - Function definitions with parameters and return types
+  - Service definitions with endpoints
   - Resource function definitions
 - Saves timestamped documentation to `balmd-generate/` folder
 
-### 2. Context Analysis
-The code generation tool analyzes your project by:
-- Reading the project summary from `bal.md`
-- Understanding project architecture and guidelines
-- Identifying relevant existing code files
+### 2. Code Extraction (`extract-relevant-code.ts`)
+- Reads the project documentation (bal.md) to understand project structure
+- Analyzes all `.bal` files in the project
+- Uses AI to identify and extract code segments relevant to the user query
+- Generates structured markdown reports with extracted code
+- Saves results to `code-extract/` folder with timestamps
 
-### 3. Code Extraction
-When needed, the `extractRelevantContentWithLLM` tool:
-- Scans all `.bal` files in the project directory
-- Uses AI to extract only relevant code segments
-- Provides context for modifications or integrations
+### 3. Code Generation (`index.ts`)
+- Analyzes project context from bal.md and extracted code
+- Uses comprehensive API documentation for accurate function usage
+- Employs advanced prompt engineering for high-quality code generation
+- Tracks token usage with Anthropic's official API for cost monitoring
+- Generates complete, functional Ballerina code with proper error handling
+- Saves results with detailed token usage statistics
 
-### 4. Code Generation
-The AI generates Ballerina code by:
-- Following project-specific guidelines from `bal.md`
-- Using only APIs and functions from provided documentation
-- Ensuring proper error handling and type safety
-- Following Ballerina best practices and conventions
+## Output Files
 
-### 5. Output Generation
-Results are saved to timestamped files containing:
-- Original user query
-- Generated code with explanations
-- Token usage statistics
+### Documentation Generation Output
+- **Location**: `balmd-generate/balYYYYMMDD_HHMMSS.md`
+- **Contains**: Comprehensive project summary organized by file structure
+
+### Code Extraction Output
+- **Location**: `code-extract/extract_YYYY-MM-DDTHH-mm-ss-sssZ.md`
+- **Contains**: Relevant code segments formatted as structured markdown report
+
+### Code Generation Output
+- **Location**: `poc/YYYY-MM-DDTHH-mm-ss-sssZ.txt`
+- **Contains**: Generated code with explanations and detailed token usage statistics
+- **Additional**: `*_tokens.json` file with machine-readable token usage data
+
+## Token Usage Tracking
+
+The tool provides comprehensive token usage tracking including:
+
+- **User Query Tokens**: Tokens for the input query
+- **LangLibs Tokens**: Tokens for Ballerina language libraries
+- **API Docs Tokens**: Tokens for API documentation
+- **Bal.md Tokens**: Tokens for project documentation
+- **Extract Code Tokens**: Tokens for extracted code context
+- **Total Input Tokens**: Complete input token count
+- **Output Tokens**: Generated response token count
+
+This helps monitor API usage and costs effectively.
 
 ## Code Generation Rules
 
@@ -145,114 +221,31 @@ The tool follows strict guidelines to ensure high-quality code:
 - **JSON Handling**: Always converts JSON to records before manipulation
 - **Configuration**: Uses configurable variables for external parameters
 
-## Output Files
+## Advanced Features
 
-### Code Generation Output
-- Location: `poc/YYYY-MM-DDTHH-mm-ss-sssZ.txt`
-- Contains: User query, generated response, and token usage statistics
+### Real Token Counting
+Uses Anthropic's official token counting API for accurate cost tracking and optimization.
 
-### Documentation Generation Output
-- Location: `balmd-generate/balYYYYMMDD_HHMMSS.md`
-- Contains: Comprehensive project summary organized by file structure
+### Intelligent Context Analysis
+Combines project documentation, extracted code, and API documentation for comprehensive context awareness.
 
-### Code Extraction Reports
-- Location: `code-extract/code_extract_symbols_timestamp.md`
-- Contains: Extracted relevant code segments in markdown format
+### Tool Integration
+Supports tool calls for dynamic code extraction during generation process.
 
-## Example Output Structure
-
-### Code Generation Output
-```
-=== USER QUERY ===
-Create a REST API service for user management
-
-=== RESPONSE ===
-[Detailed explanation of the approach]
-
-<code filename="main.bal">
-```ballerina
-import ballerina/http;
-// Generated code here...
-```
-</code>
-
-=== TOKEN USAGE ===
-Input Tokens: 1500
-Output Tokens: 800
-Total Counted Tokens: 2300
-```
-
-### Documentation Generation Output
-```markdown
-## main.bal
-
-### Imports
-- import ballerina/http
-- import ballerina/sql
-
-### Configurable Level Variables
-- configurable string DB_HOST = "localhost"
-
-### Module Level Variables
-- http:Client userClient
-
-### Types
-- UserRecord: { string name, int age, string email }
-
-### Functions
-- getUserById(int id) returns UserRecord|error
-
-### Services
-- UserService on http:Listener(8080)
-
-### Resources
-- GET /users/{id} - Retrieve user by ID
-```
-
-## Workflow Recommendations
-
-1. **Start with Documentation Generation**:
-   ```bash
-   BAL_PROJECT_PATH=/path/to/your/project bun run generate-balmd
-   ```
-
-2. **Use Generated Documentation for Code Generation**:
-   ```bash
-   BAL_MD_PATH=/path/to/generated/bal.md USER_QUERY="Your query" bun start
-   ```
-
-3. **Iterate and Refine**:
-   - Update your codebase
-   - Regenerate documentation as needed
-   - Use updated documentation for better code generation
-
-## API Integration
-
-The tool integrates with:
-- **Anthropic Claude**: For AI-powered code generation and documentation
-- **Ballerina API Docs**: For accurate function and type usage
-- **Language Libraries**: For built-in Ballerina functionality
-
-## Best Practices
-
-1. **Clear Queries**: Provide specific, detailed requirements in your USER_QUERY
-2. **Project Context**: Maintain an up-to-date `bal.md` file with project guidelines
-3. **API Documentation**: Ensure API documentation JSON is comprehensive and current
-4. **Code Review**: Always review generated code before integration
-5. **Testing**: Test generated code in your development environment
-6. **Documentation Updates**: Regenerate bal.md when project structure changes significantly
+### Error Handling
+Comprehensive error handling with detailed logging and graceful fallbacks.
 
 ## Troubleshooting
 
 ### Common Issues
 
 1. **Missing Environment Variables**
-   - Ensure all required environment variables are set
+   - Ensure all required environment variables are set for each script
    - Check file paths are correct and accessible
 
 2. **Empty bal.md File**
-   - Use the documentation generation feature to create one
-   - Verify the bal.md file exists and contains project information
+   - Run the documentation generation script first
+   - Verify the project contains .bal files
    - Check file permissions
 
 3. **No .bal Files Found**
@@ -263,23 +256,40 @@ The tool integrates with:
    - Verify ANTHROPIC_API_KEY is valid and has sufficient credits
    - Check network connectivity
 
+5. **Token Limit Exceeded**
+   - Monitor token usage with the provided tracking
+   - Consider breaking large projects into smaller segments
+
 ### Debug Mode
 
 Set environment variable for detailed logging:
 ```bash
-DEBUG=true bun run start
+DEBUG=true bun run <script-name>
 ```
 
-## Token Usage
+## Models Used
 
-The tool tracks and reports:
-- Input tokens (query + context)
-- Output tokens (generated code)
-- Tool call tokens (for code extraction)
-- Total token consumption
+- **Documentation Generation**: Claude Sonnet 4 (`claude-sonnet-4-20250514`)
+- **Code Extraction**: Claude Sonnet 3.5 (`claude-3-5-sonnet-20240620`)
+- **Code Generation**: Claude Haiku (configurable via `ANTHROPIC_HAIKU`)
 
-This helps monitor API usage and costs.
+## API Integration
 
+The tool integrates with:
+- **Anthropic Claude**: For AI-powered code generation and documentation
+- **Ballerina API Docs**: For accurate function and type usage
+- **Language Libraries**: For built-in Ballerina functionality
+- **Token Counting API**: For real-time usage tracking
+
+## Best Practices
+
+1. **Sequential Workflow**: Use documentation → extraction → generation workflow
+2. **Clear Queries**: Provide specific, detailed requirements in your queries
+3. **Project Maintenance**: Keep documentation updated with project changes
+4. **API Documentation**: Ensure API documentation JSON is comprehensive and current
+5. **Code Review**: Always review generated code before integration
+6. **Testing**: Test generated code in your development environment
+7. **Token Monitoring**: Monitor token usage to manage API costs
 
 ## Contributing
 

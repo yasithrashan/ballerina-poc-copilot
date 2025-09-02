@@ -1,0 +1,290 @@
+=== USER QUERY ===
+Add pagination support to existing get orders and get products endpoints with limit, offset, and sortBy parameters.
+
+=== RESPONSE ===
+Based on the existing code and project requirements, I'll modify the `main.bal` file to support pagination. I'll make the following changes:
+
+1. Add new type `PaginationRequest` to handle pagination parameters
+2. Update the GET endpoints for products and orders to include pagination
+3. Modify the database queries to support limit, offset, and sorting
+
+Here's the implementation:
+
+<code filename="main.bal">
+```ballerina
+// Add this new type to types.bal
+public type PaginationRequest record {|
+    int limit = 10;  // Default limit of 10 items
+    int offset = 0;  // Default offset of 0
+    string sortBy?;  // Optional sorting field
+    boolean sortDesc = false;  // Default to ascending order
+|};
+
+// Update the products GET endpoint
+resource function get products(
+    int limit = 10, 
+    int offset = 0, 
+    string? sortBy = (), 
+    boolean sortDesc = false
+) returns record {|
+    Product[] data;
+    int total;
+    int limit;
+    int offset;
+|} | error {
+    // Construct the base query
+    string sortField = sortBy ?: "product_id";
+    string sortDirection = sortDesc ? "DESC" : "ASC";
+    
+    // Count total active products
+    sql:ParameterizedQuery countQuery = `
+        SELECT COUNT(*) as total 
+        FROM products 
+        WHERE active = true
+    `;
+    int totalProducts = check getTotalCount(countQuery);
+
+    // Construct the select query with pagination and sorting
+    sql:ParameterizedQuery selectQuery = `
+        SELECT product_id, name, description, price, currency, active, 
+               stripe_product_id, stripe_price_id, created_at
+        FROM products 
+        WHERE active = true
+        ORDER BY ${sortField} ${sortDirection}
+        LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    stream<Product, sql:Error?> productStream = dbClient->query(selectQuery);
+    Product[] products = [];
+
+    check from Product product in productStream
+        do {
+            products.push(product);
+        };
+
+    return {
+        data: products,
+        total: totalProducts,
+        limit,
+        offset
+    };
+}
+
+// Update the orders GET endpoint
+resource function get orders(
+    int limit = 10, 
+    int offset = 0, 
+    string? sortBy = (), 
+    boolean sortDesc = false
+) returns record {|
+    OrderSummary[] data;
+    int total;
+    int limit;
+    int offset;
+|} | error {
+    // Determine sort field
+    string sortField = sortBy ?: "o.created_at";
+    string sortDirection = sortDesc ? "DESC" : "ASC";
+
+    // Count total orders
+    sql:ParameterizedQuery countQuery = `
+        SELECT COUNT(*) as total 
+        FROM orders
+    `;
+    int totalOrders = check getTotalCount(countQuery);
+
+    // Construct the summary query with pagination and sorting
+    sql:ParameterizedQuery summaryQuery = `
+        SELECT o.order_id, o.customer_id, c.name as customer_name, o.status,
+               o.total_amount, o.currency, o.created_at,
+               COUNT(oi.order_item_id) as item_count
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        GROUP BY o.order_id, o.customer_id, c.name, o.status, o.total_amount, o.currency, o.created_at
+        ORDER BY ${sortField} ${sortDirection}
+        LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    stream<record {|int order_id; int customer_id; string customer_name; string status;
+                   decimal total_amount; string currency; int created_at; int item_count;|}, sql:Error?> summaryStream = dbClient->query(summaryQuery);
+
+    OrderSummary[] summaries = [];
+
+    check from var summary in summaryStream
+        do {
+            time:Utc createdTime = [summary.created_at, 0];
+            OrderSummary orderSummary = {
+                orderId: summary.order_id,
+                customerId: summary.customer_id,
+                customerName: summary.customer_name,
+                status: summary.status,
+                totalAmount: summary.total_amount,
+                currency: summary.currency,
+                itemCount: summary.item_count,
+                createdAt: createdTime
+            };
+            summaries.push(orderSummary);
+        };
+
+    return {
+        data: summaries,
+        total: totalOrders,
+        limit,
+        offset
+    };
+}
+
+// Helper function to get total count
+function getTotalCount(sql:ParameterizedQuery countQuery) returns int|error {
+    stream<record {|int total;|}, sql:Error?> countStream = dbClient->query(countQuery);
+    record {|int total;|}? countRecord = check countStream.next();
+    
+    if countRecord is record {|int total;|} {
+        return countRecord.total;
+    }
+    return 0;
+}
+```
+</code>
+
+Key changes:
+1. Updated GET endpoints to accept pagination parameters:
+   - `limit`: Number of items to return (default 10)
+   - `offset`: Starting point for pagination (default 0)
+   - `sortBy`: Field to sort by (optional, defaults to `product_id` or `created_at`)
+   - `sortDesc`: Sort direction (default false = ascending)
+
+2. Modified return type to include:
+   - `data`: The actual list of items
+   - `total`: Total number of items
+   - `limit`: Pagination limit
+   - `offset`: Pagination offset
+
+3. Added a helper function `getTotalCount()` to get the total number of records
+
+The API documentation should be updated in the bal.md file to reflect these changes:
+
+```markdown
+#### `/api/v1/products`
+
+* **GET /**
+   * **Parameters**:
+      * **Query Parameters**:
+         * `limit` - int (optional, default 10) - Number of products to return
+         * `offset` - int (optional, default 0) - Starting point for pagination
+         * `sortBy` - string (optional) - Field to sort by
+         * `sortDesc` - boolean (optional, default false) - Sort in descending order
+   * **Returns**: 
+     ```ballerina
+     {
+         data: Product[],
+         total: int,
+         limit: int,
+         offset: int
+     }
+     ```
+   * **Status Codes**:
+     - `200 OK` - List of active products returned
+     - `500 Internal Server Error` - Database error
+
+#### `/api/v1/orders`
+
+* **GET /**
+   * **Parameters**:
+      * **Query Parameters**:
+         * `limit` - int (optional, default 10) - Number of orders to return
+         * `offset` - int (optional, default 0) - Starting point for pagination
+         * `sortBy` - string (optional) - Field to sort by
+         * `sortDesc` - boolean (optional, default false) - Sort in descending order
+   * **Returns**: 
+     ```ballerina
+     {
+         data: OrderSummary[],
+         total: int,
+         limit: int,
+         offset: int
+     }
+     ```
+   * **Status Codes**:
+     - `200 OK` - List of order summaries returned
+     - `500 Internal Server Error` - Database error
+```
+
+Explanation of Pagination Implementation:
+1. Added flexible pagination with default values
+2. Included total count to help frontend implement pagination controls
+3. Supported dynamic sorting by any field
+4. Maintained existing query structure with added flexibility
+5. Handled both products and orders endpoints similarly
+6. Provided a generic approach to pagination that can be easily extended
+
+{
+    "targetFile": "main.bal",
+    "imports": [
+        "import ballerina/sql;",
+        "import ballerina/time;"
+    ],
+    "configurables": [],
+    "moduleVars": [],
+    "typeDefs": [
+        {
+            "name": "PaginationRequest",
+            "fields": [
+                {"name": "limit", "type": "int", "defaultValue": "10"},
+                {"name": "offset", "type": "int", "defaultValue": "0"},
+                {"name": "sortBy", "type": "string?"},
+                {"name": "sortDesc", "type": "boolean", "defaultValue": "false"}
+            ]
+        }
+    ],
+    "functionDefs": [
+        {
+            "name": "getTotalCount",
+            "description": "Helper function to get total count of records"
+        }
+    ],
+    "serviceDefs": [],
+    "resourceDefs": [
+        {
+            "name": "get products",
+            "description": "Get products with pagination and sorting support",
+            "parameters": [
+                {"name": "limit", "type": "int", "defaultValue": "10"},
+                {"name": "offset", "type": "int", "defaultValue": "0"},
+                {"name": "sortBy", "type": "string?"},
+                {"name": "sortDesc", "type": "boolean", "defaultValue": "false"}
+            ]
+        },
+        {
+            "name": "get orders",
+            "description": "Get orders with pagination and sorting support",
+            "parameters": [
+                {"name": "limit", "type": "int", "defaultValue": "10"},
+                {"name": "offset", "type": "int", "defaultValue": "0"},
+                {"name": "sortBy", "type": "string?"},
+                {"name": "sortDesc", "type": "boolean", "defaultValue": "false"}
+            ]
+        }
+    ]
+}
+
+
+=== TOKEN USAGE BREAKDOWN ===
+User Query Tokens: 28
+LangLibs Tokens: 13,563
+API Docs Tokens: 876
+Bal.md Tokens: 2,094
+Extract Code MD File Tokens: 620
+
+Total Input Tokens: 18,480
+Output Tokens: 2,406
+
+Total Tokens Used: 20,886
+
+
+=== GENERATION METADATA ===
+Generated At: 2025-09-01T17:49:34.067Z
+Model Used: claude-3-5-haiku-20241022
+Max Output Tokens: 8192
+Step Count Limit: 25

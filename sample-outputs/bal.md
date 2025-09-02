@@ -1,153 +1,268 @@
-# Ballerina Bookstore API Project
-## This is the project summary of of the codebase
+# Order Management Project
+## This is a comprehensive order management system with customer, product, and order handling, integrated with Stripe for payments and invoicing.
 
-## Those are the Project Files
-- `main.bal` - Main service implementation
-- `types.bal` - Type definitions
+## Project Files
+- `main.bal` - Main service implementation with API endpoints and business logic
+- `types.bal` - Type definitions for the project
 
 ---
-
 
 ## File Name: main.bal
 
 ### Imports
-- `ballerina/http`
-- `ballerina/sql`
-- `ballerinax/mysql`
+- `import ballerina/http;`
+- `import ballerina/time;`
+- `import ballerinax/mysql;`
+- `import ballerinax/stripe;`
+- `import ballerina/sql;`
 
 ---
 
 ### Configurable Variables
-
-* **Comments/DocComments**: Database configuration
-
 - `dbHost` - string - `"localhost"`
 - `dbUser` - string - `"root"`
 - `dbPassword` - string - `""`
-- `dbName` - string - `"bookstore"`
+- `dbName` - string - `"order_management"`
 - `dbPort` - int - `3306`
-- `servicePort` - int - `8080`
+- `stripeApiKey` - string - `""`
 
 ### Module Level Variables
 - `dbClient` - mysql:Client
+- `stripeClient` - stripe:Client
 
 ---
 
 ### Services
-HTTP Service: `/bookstore` on port `servicePort 8080`
-
-* **Comments/DocComments**: HTTP service for bookstore
+HTTP: `/api/v1` on port `8080`
 
 ---
 
 ### Endpoints
 
-#### `bookstore/`
+#### `/api/v1/customers`
 
-* **GET /books**
-   * **Comments/DocComments**: Get all books
-   * **Parameters**: none
-   * **Returns**: `Book[]` or `ErrorResponse`
-   * **Status Codes**:
-     - `200 OK` - Successfully retrieved books
-     - `500 Internal Server Error` - Database connection or query error
-
----
-
-* **GET /books/{bookId}**
-   * **Comments/DocComments**: Get book by ID
-   * **Parameters**:
-      * **Path Parameter**:
-         * `bookId` - int - The unique identifier of the book
-   * **Returns**: `Book` or `ErrorResponse`
-   * **Status Codes**:
-     - `200 OK` - Book found and retrieved successfully
-     - `404 Not Found` - Book with specified ID does not exist
-     - `500 Internal Server Error` - Database connection or query error
-
----
-
-* **POST /books**
-   * **Comments/DocComments**: Add new book
+* **POST /**
    * **Parameters**:
       * **Body / Payload Parameter**:
-         * `bookRequest` - BookRequest - Book details to be created
-   * **Returns**: `Book` (created) or `ErrorResponse`
+         * `customerRequest` - CreateCustomerRequest - Customer details to create
+   * **Returns**: `ApiResponse|error`
    * **Status Codes**:
-     - `201 Created` - Book successfully created
-     - `400 Bad Request` - Invalid input data (empty fields, invalid price/quantity, duplicate ISBN)
-     - `500 Internal Server Error` - Database connection or insertion error
+     - `200 OK` - Successful creation of customer
+     - `400 Bad Request` - Invalid input data
+     - `500 Internal Server Error` - Database or Stripe API error
 
----
+#### `/api/v1/customers/[int customerId]`
 
-* **PUT /books/{bookId}**
-   * **Comments/DocComments**: Update book
+* **GET /**
    * **Parameters**:
       * **Path Parameter**:
-         * `bookId` - int - The unique identifier of the book to update
+         * `customerId` - int - ID of the customer to retrieve
+   * **Returns**: `Customer|ApiResponse|error`
+   * **Status Codes**:
+     - `200 OK` - Customer found and returned
+     - `404 Not Found` - Customer not found
+     - `500 Internal Server Error` - Database error
+
+#### `/api/v1/products`
+
+* **POST /**
+   * **Parameters**:
       * **Body / Payload Parameter**:
-         * `bookRequest` - BookRequest - Updated book details
-   * **Returns**: `Book` (updated) or `ErrorResponse`
+         * `productRequest` - CreateProductRequest - Product details to create
+   * **Returns**: `ApiResponse|error`
    * **Status Codes**:
-     - `200 OK` - Book successfully updated
-     - `400 Bad Request` - Invalid input data (empty fields, invalid price/quantity, duplicate ISBN)
-     - `404 Not Found` - Book with specified ID does not exist
-     - `500 Internal Server Error` - Database connection or update error
+     - `200 OK` - Successful creation of product
+     - `400 Bad Request` - Invalid input data
+     - `500 Internal Server Error` - Database or Stripe API error
 
----
+* **GET /**
+   * **Parameters**: None
+   * **Returns**: `Product[]|error`
+   * **Status Codes**:
+     - `200 OK` - List of active products returned
+     - `500 Internal Server Error` - Database error
 
-* **DELETE /books/{bookId}**
-   * **Comments/DocComments**: Delete book
+#### `/api/v1/orders`
+
+* **POST /**
+   * **Parameters**:
+      * **Body / Payload Parameter**:
+         * `orderRequest` - CreateOrderRequest - Order details to create
+   * **Returns**: `ApiResponse|error`
+   * **Status Codes**:
+     - `200 OK` - Successful creation of order
+     - `400 Bad Request` - Invalid input data or customer/product not found
+     - `500 Internal Server Error` - Database or Stripe API error
+
+* **GET /**
+   * **Parameters**: None
+   * **Returns**: `OrderSummary[]|error`
+   * **Status Codes**:
+     - `200 OK` - List of order summaries returned
+     - `500 Internal Server Error` - Database error
+
+#### `/api/v1/orders/[int orderId]`
+
+* **GET /**
    * **Parameters**:
       * **Path Parameter**:
-         * `bookId` - int - The unique identifier of the book to delete
-   * **Returns**: `http:NoContent` or `ErrorResponse`
+         * `orderId` - int - ID of the order to retrieve
+   * **Returns**: `Order|ApiResponse|error`
    * **Status Codes**:
-     - `204 No Content` - Book successfully deleted
-     - `404 Not Found` - Book with specified ID does not exist
-     - `500 Internal Server Error` - Database connection or deletion error
+     - `200 OK` - Order found and returned
+     - `404 Not Found` - Order not found
+     - `500 Internal Server Error` - Database error
+
+#### `/api/v1/orders/[int orderId]/status`
+
+* **PUT /**
+   * **Parameters**:
+      * **Path Parameter**:
+         * `orderId` - int - ID of the order to update
+      * **Body / Payload Parameter**:
+         * `statusRequest` - UpdateOrderStatusRequest - New status for the order
+   * **Returns**: `ApiResponse|error`
+   * **Status Codes**:
+     - `200 OK` - Order status updated successfully
+     - `404 Not Found` - Order not found
+     - `500 Internal Server Error` - Database error
+
+#### `/api/v1/orders/[int orderId]/invoice`
+
+* **POST /**
+   * **Parameters**:
+      * **Path Parameter**:
+         * `orderId` - int - ID of the order to create an invoice for
+   * **Returns**: `ApiResponse|error`
+   * **Status Codes**:
+     - `200 OK` - Invoice created successfully
+     - `404 Not Found` - Order not found
+     - `400 Bad Request` - Customer does not have Stripe integration
+     - `500 Internal Server Error` - Database or Stripe API error
 
 ---
 
-* **GET /health**
-   * **Comments/DocComments**: Health check endpoint
-   * **Parameters**: none
-   * **Returns**: `http:Ok`
-   * **Status Codes**:
-     - `200 OK` - Service is healthy and running
+### Functions
+
+* **None**
 
 ---
 
 ## File Name: types.bal
 
+### Imports
+- `import ballerina/time;`
+
+---
+
+### Configurable Variables
+- None
+
+### Module Level Variables
+- None
+
+---
+
+### Functions
+
+* **None**
+
+---
+
 ### Type Definitions
 
-* **Book**
-   * **Comments/DocComments**: Book record type for database operations
+* **Customer**
    * **Fields**:
-      * `id?` - int (optional)
-      * `title` - string
-      * `author` - string
-      * `isbn` - string
+      * `customerId` - int [optional]
+      * `name` - string
+      * `email` - string
+      * `phone` - string?
+      * `address` - string?
+      * `stripeCustomerId` - string?
+      * `createdAt` - time:Utc [optional]
+
+* **Product**
+   * **Fields**:
+      * `productId` - int [optional]
+      * `name` - string
+      * `description` - string
       * `price` - decimal
-      * `quantity` - int
+      * `currency` - string
+      * `active` - boolean
+      * `stripeProductId` - string?
+      * `stripePriceId` - string?
+      * `createdAt` - time:Utc [optional]
 
-* **BookRequest**
-   * **Comments/DocComments**: Book creation request (without id)
+* **Order**
    * **Fields**:
-      * `title` - string
-      * `author` - string
-      * `isbn` - string
-      * `price` - decimal
-      * `quantity` - int
-
-* **ErrorResponse**
-   * **Comments/DocComments**: Error response type
-   * **Fields**:
-      * `message` - string
-
-* **SuccessResponse**
-   * **Comments/DocComments**: Success response for operations
-   * **Fields**:
-      * `message` - string
+      * `orderId` - int [optional]
+      * `customerId` - int
       * `status` - string
+      * `totalAmount` - decimal
+      * `currency` - string
+      * `stripePaymentIntentId` - string?
+      * `stripeInvoiceId` - string?
+      * `items` - OrderItem[]
+      * `createdAt` - time:Utc [optional]
+      * `updatedAt` - time:Utc?
+
+* **OrderItem**
+   * **Fields**:
+      * `orderItemId` - int [optional]
+      * `orderId` - int [optional]
+      * `productId` - int
+      * `quantity` - int
+      * `unitPrice` - decimal
+      * `totalPrice` - decimal
+
+* **CreateCustomerRequest**
+   * **Fields**:
+      * `name` - string
+      * `email` - string
+      * `phone` - string?
+      * `address` - string?
+
+* **CreateProductRequest**
+   * **Fields**:
+      * `name` - string
+      * `description` - string
+      * `price` - decimal
+      * `currency` - string
+      * `active` - boolean
+
+* **CreateOrderRequest**
+   * **Fields**:
+      * `customerId` - int
+      * `items` - OrderItemRequest[]
+
+* **OrderItemRequest**
+   * **Fields**:
+      * `productId` - int
+      * `quantity` - int
+
+* **UpdateOrderStatusRequest**
+   * **Fields**:
+      * `status` - string
+
+* **ApiResponse**
+   * **Fields**:
+      * `success` - boolean
+      * `message` - string
+      * `data` - anydata?
+
+* **OrderSummary**
+   * **Fields**:
+      * `orderId` - int
+      * `customerId` - int
+      * `customerName` - string
+      * `status` - string
+      * `totalAmount` - decimal
+      * `currency` - string
+      * `itemCount` - int
+      * `createdAt` - time:Utc
+
+* **InvoiceResponse**
+   * **Fields**:
+      * `orderId` - int
+      * `invoiceId` - string
+      * `invoiceUrl` - string?

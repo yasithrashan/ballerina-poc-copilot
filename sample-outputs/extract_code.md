@@ -1,173 +1,87 @@
 # Code Extract Report
 
-**Search criteria:** Wishlist management feature including endpoints to add/remove products from wishlist and view wishlist items
+**Search criteria:** The code segments related to the existing get orders and get products endpoints, which need to be updated with pagination support (limit, offset, and sortBy parameters).
 **Files processed:** 2
-**Generated:** 2025-09-01T18:33:11.149Z
+**Generated:** 2025-09-01T17:45:07.153Z
 
 ---
 
-File: types.bal
+### File: main.bal
 
-// New type definition for Wishlist
-public type Wishlist record {|
-    int wishlistId?;
-    int customerId;
-    int productId;
-    time:Utc addedAt?;
-|};
-
-// New type definition for WishlistInput
-public type WishlistInput record {|
-    int customerId;
-    int productId;
-|};
-
-File: main.bal
-
-// New resource function to add product to wishlist
-resource function post customers/[int customerId]/wishlist(@http:Header string? authorization, WishlistInput wishlistInput) returns ApiResponse|http:Unauthorized|http:BadRequest|http:InternalServerError {
-    // Validate JWT token
-    if authorization is () {
-        return <http:Unauthorized>{body: {success: false, message: "Authorization header required"}};
-    }
-
-    string token = authorization.substring(7);
-    jwt:Payload|error payload = validateJwtToken(token);
-
-    if payload is error {
-        return <http:Unauthorized>{body: {success: false, message: "Invalid token"}};
-    }
-
-    // Validate customer exists
-    boolean customerExists = validateCustomer(customerId);
-    if !customerExists {
-        return <http:BadRequest>{
-            body: {
-                success: false,
-                message: "Invalid customer ID"
-            }
-        };
-    }
-
-    // Validate product exists
-    Product? product = getProductById(wishlistInput.productId);
-    if product is () {
-        return <http:BadRequest>{
-            body: {
-                success: false,
-                message: "Invalid product ID"
-            }
-        };
-    }
-
-    time:Utc currentTime = time:utcNow();
-
-    sql:ParameterizedQuery insertQuery = `
-        INSERT INTO wishlists (customer_id, product_id, added_at)
-        VALUES (${customerId}, ${wishlistInput.productId}, ${currentTime})
-    `;
-
-    sql:ExecutionResult|sql:Error result = dbClient->execute(insertQuery);
-
-    if result is sql:Error {
-        return <http:InternalServerError>{
-            body: {
-                success: false,
-                message: "Failed to add product to wishlist"
-            }
-        };
-    }
-
-    return {
-        success: true,
-        message: "Product added to wishlist successfully",
-        data: {wishlistId: result.lastInsertId}
-    };
-}
-
-// New resource function to remove product from wishlist
-resource function delete customers/[int customerId]/wishlist/[int productId](@http:Header string? authorization) returns ApiResponse|http:Unauthorized|http:NotFound|http:InternalServerError {
-    // Validate JWT token
-    if authorization is () {
-        return <http:Unauthorized>{body: {success: false, message: "Authorization header required"}};
-    }
-
-    string token = authorization.substring(7);
-    jwt:Payload|error payload = validateJwtToken(token);
-
-    if payload is error {
-        return <http:Unauthorized>{body: {success: false, message: "Invalid token"}};
-    }
-
-    sql:ParameterizedQuery deleteQuery = `
-        DELETE FROM wishlists
-        WHERE customer_id = ${customerId} AND product_id = ${productId}
-    `;
-
-    sql:ExecutionResult|sql:Error result = dbClient->execute(deleteQuery);
-
-    if result is sql:Error {
-        return <http:InternalServerError>{
-            body: {
-                success: false,
-                message: "Failed to remove product from wishlist"
-            }
-        };
-    }
-
-    int? affectedRowCount = result.affectedRowCount;
-    if affectedRowCount is () || affectedRowCount == 0 {
-        return <http:NotFound>{
-            body: {
-                success: false,
-                message: "Product not found in wishlist"
-            }
-        };
-    }
-
-    return {
-        success: true,
-        message: "Product removed from wishlist successfully"
-    };
-}
-
-// New resource function to view wishlist items
-resource function get customers/[int customerId]/wishlist(@http:Header string? authorization) returns ApiResponse|http:Unauthorized|http:InternalServerError {
-    // Validate JWT token
-    if authorization is () {
-        return <http:Unauthorized>{body: {success: false, message: "Authorization header required"}};
-    }
-
-    string token = authorization.substring(7);
-    jwt:Payload|error payload = validateJwtToken(token);
-
-    if payload is error {
-        return <http:Unauthorized>{body: {success: false, message: "Invalid token"}};
-    }
-
+resource function get products() returns Product[]|error {
     sql:ParameterizedQuery selectQuery = `
-        SELECT w.wishlist_id, w.customer_id, w.product_id, w.added_at,
-               p.product_name, p.description, p.price, p.stock_quantity
-        FROM wishlists w
-        JOIN products p ON w.product_id = p.product_id
-        WHERE w.customer_id = ${customerId}
+        SELECT product_id, name, description, price, currency, active, stripe_product_id, stripe_price_id, created_at
+        FROM products WHERE active = true
     `;
 
-    stream<record {|Wishlist; string product_name; string description; decimal price; int stock_quantity;|}, sql:Error?> wishlistStream = dbClient->query(selectQuery);
-    record {|Wishlist; string product_name; string description; decimal price; int stock_quantity;|}[]|error wishlistItems = from record {|Wishlist; string product_name; string description; decimal price; int stock_quantity;|} item in wishlistStream select item;
+    stream<Product, sql:Error?> productStream = dbClient->query(selectQuery);
+    Product[] products = [];
 
-    if wishlistItems is error {
-        return <http:InternalServerError>{
-            body: {
-                success: false,
-                message: "Failed to retrieve wishlist items"
-            }
+    check from Product product in productStream
+        do {
+            products.push(product);
         };
-    }
 
-    return {
-        success: true,
-        message: "Wishlist items retrieved successfully",
-        data: wishlistItems
-    };
+    return products;
 }
+
+resource function get orders() returns OrderSummary[]|error {
+    sql:ParameterizedQuery summaryQuery = `
+        SELECT o.order_id, o.customer_id, c.name as customer_name, o.status,
+               o.total_amount, o.currency, o.created_at,
+               COUNT(oi.order_item_id) as item_count
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.customer_id
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        GROUP BY o.order_id, o.customer_id, c.name, o.status, o.total_amount, o.currency, o.created_at
+        ORDER BY o.created_at DESC
+    `;
+
+    stream<record {|int order_id; int customer_id; string customer_name; string status;
+                   decimal total_amount; string currency; int created_at; int item_count;|}, sql:Error?> summaryStream = dbClient->query(summaryQuery);
+
+    OrderSummary[] summaries = [];
+
+    check from var summary in summaryStream
+        do {
+            time:Utc createdTime = [summary.created_at, 0];
+            OrderSummary orderSummary = {
+                orderId: summary.order_id,
+                customerId: summary.customer_id,
+                customerName: summary.customer_name,
+                status: summary.status,
+                totalAmount: summary.total_amount,
+                currency: summary.currency,
+                itemCount: summary.item_count,
+                createdAt: createdTime
+            };
+            summaries.push(orderSummary);
+        };
+
+    return summaries;
+}
+
+### File: types.bal
+
+public type Product record {|
+    int productId?;
+    string name;
+    string description;
+    decimal price;
+    string currency;
+    boolean active;
+    string? stripeProductId;
+    string? stripePriceId;
+    time:Utc createdAt?;
+|};
+
+public type OrderSummary record {|
+    int orderId;
+    int customerId;
+    string customerName;
+    string status;
+    decimal totalAmount;
+    string currency;
+    int itemCount;
+    time:Utc createdAt;
+|};

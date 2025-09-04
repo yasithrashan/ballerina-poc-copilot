@@ -16,7 +16,7 @@ An intelligent AI-powered tool that generates Ballerina code based on user queri
 
 The tool consists of three main components:
 
-1. **Code Generator** (`index.ts`) - Main AI-powered code generation engine
+1. **Code Generator** (`code.ts`) - Main AI-powered code generation engine
 2. **Documentation Generator** (`generate-balmd.ts`) - Automated project documentation creator
 3. **Code Extractor** (`extract-relevant-code.ts`) - Intelligent code segment extraction tool
 
@@ -42,7 +42,7 @@ bun add ai @ai-sdk/anthropic zod @anthropic-ai/sdk
 
 ## Environment Variables
 
-### For Code Generation (`index.ts`)
+### For Code Generation (`code.ts`)
 
 ```env
 # Required for Code Generation
@@ -107,7 +107,8 @@ bun run extract-relevant-code.ts
 Generate new Ballerina code based on your requirements:
 
 ```bash
-bun run index.ts
+bun run code.ts
+
 ```
 
 ### Recommended Workflow
@@ -124,7 +125,7 @@ bun run index.ts
 
 3. **Generate Code**:
    ```bash
-   BAL_MD_PATH=/path/to/generated/bal.md EXTRACT_FILE_PATH=/path/to/extracted/code.md USER_QUERY="Your generation query" bun run index.ts
+   BAL_MD_PATH=/path/to/generated/bal.md EXTRACT_FILE_PATH=/path/to/extracted/code.md USER_QUERY="Your generation query" bun run code.ts
    ```
 
 ## Example Queries
@@ -172,7 +173,7 @@ USER_QUERY="Extract all database connection and query functions"
 - Generates structured markdown reports with extracted code
 - Saves results to `code-extract/` folder with timestamps
 
-### 3. Code Generation (`index.ts`)
+### 3. Code Generation (`code.ts`)
 - Analyzes project context from bal.md and extracted code
 - Uses comprehensive API documentation for accurate function usage
 - Employs advanced prompt engineering for high-quality code generation

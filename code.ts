@@ -1,11 +1,23 @@
 import { generateText, stepCountIs, tool } from "ai";
-import { ANTHROPIC_HAIKU, getAnthropicClinet } from "./connection";
+import { ANTHROPIC_HAIKU, ANTHROPIC_SONNET_4, getAnthropicClinet } from "./connection";
 import { anthropic } from "@ai-sdk/anthropic";
 import * as fs from "fs";
 import type { Library } from "./libs/types";
 import { LANGLIBS } from "./libs/langlibs";
 import path from "path";
-import { z } from "zod"
+import { z } from "zod";
+import { Anthropic } from "@anthropic-ai/sdk";
+
+// Token usage tracking interface
+interface TokenUsage {
+    userQueryTokens: number;
+    langLibsTokens: number;
+    apiDocsTokens: number;
+    balMdTokens: number;
+    extractCodeTokens: number;
+    totalInputTokens: number;
+    outputTokens: number;
+}
 
 // Get the API DOCS
 const jsonPath = process.env.API_DOC_JSON;
@@ -52,18 +64,56 @@ const extractRelevantCode = tool({
     }
 });
 
-// Generate Ballerina code function
+// Real token counting using Anthropic's official API
+async function countTokensWithAPI(text: string, anthropicClient: Anthropic): Promise<number> {
+    try {
+        const response = await anthropicClient.messages.countTokens({
+            model: ANTHROPIC_HAIKU,
+            messages: [{ role: "user", content: text }]
+        });
+        return response.input_tokens;
+    } catch (error) {
+        console.warn("Token counting API failed, falling back to approximation:", error);
+        // Fallback to rough approximation
+        return Math.ceil(text.length / 4);
+    }
+}
+
+// Generate Ballerina code function with real token tracking
 async function generateBallerinaCode(
     userQuery: string,
     API_DOC: Library[]
-): Promise<string> {
+): Promise<{ response: string; tokenUsage: TokenUsage }> {
     const systemPromptPrefix = getSystemPromptPrefix(API_DOC);
     const systemPromptSuffix = getSystemPromptSuffix(LANG_LIB);
     const systemPrompt = systemPromptPrefix + "\n\n" + systemPromptSuffix + "\n\n" + getSystemPromptBalMd(balMdContent);
 
     console.log("Generating Code...");
 
-    const { text } = await generateText({
+    // Create Anthropic client for token counting
+    const anthropicClient = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    // Calculate real token usage using Anthropic's API
+    console.log("Counting tokens using Anthropic's official API...");
+    const userQueryTokens = await countTokensWithAPI(userQuery, anthropicClient);
+    const langLibsTokens = await countTokensWithAPI(JSON.stringify(LANG_LIB), anthropicClient);
+    const apiDocsTokens = await countTokensWithAPI(JSON.stringify(API_DOC), anthropicClient);
+    const balMdTokens = await countTokensWithAPI(balMdContent, anthropicClient);
+
+    // Get extract code content for token counting
+    let extractCodeTokens = 0;
+    const extractFilePath = process.env.EXTRACT_FILE_PATH;
+    if (extractFilePath && fs.existsSync(extractFilePath)) {
+        const extractContent = fs.readFileSync(extractFilePath, "utf-8");
+        extractCodeTokens = await countTokensWithAPI(extractContent, anthropicClient);
+    }
+
+    // Count tokens for the complete message that will be sent to the API
+    const totalInputTokens = await countTokensWithAPI(systemPrompt + "\n\n" + userQuery, anthropicClient);
+
+    const result = await generateText({
         model: anthropic(getAnthropicClinet(ANTHROPIC_HAIKU)),
         messages: [
             { role: "system", content: systemPrompt },
@@ -74,7 +124,19 @@ async function generateBallerinaCode(
         maxOutputTokens: 8192,
     });
 
-    return text;
+    const outputTokens = await countTokensWithAPI(result.text, anthropicClient);
+
+    const tokenUsage: TokenUsage = {
+        userQueryTokens,
+        langLibsTokens,
+        apiDocsTokens,
+        balMdTokens,
+        extractCodeTokens,
+        totalInputTokens,
+        outputTokens
+    };
+
+    return { response: result.text, tokenUsage };
 }
 
 // Helper functions (updated to remove tool-related content)
@@ -144,8 +206,12 @@ If the query requires code, follow these steps to generate the Ballerina code:
 
     Rule:   After that, call the tool "extractRelevantCode" to get the actual code.
             Use the "extractFilePath" parameter that is provided by the environment / system (do not try to generate paths yourself).
-
             You must use the extractRelevantCode tool for get actual content.
+
+If extractRelevantCode does not return any results, it means there is no matching code context in the source files.
+In such cases, you must fall back to the bal.md file and generate the response entirely from scratch based on its contents.
+If the bal.md file also has no relevant context, then you must still create the response from scratch.
+Always remember: when no code context is available from either the source files or bal.md, you are responsible for producing the summary independently.
 
 2. Carefully analyze the provided API documentation:
    - Identify the available libraries, clients, their functions and their relevant types.
@@ -221,6 +287,23 @@ Example Codeblock segment:
 `;
 }
 
+// Format token usage for output
+function formatTokenUsage(tokenUsage: TokenUsage): string {
+    return `
+=== TOKEN USAGE BREAKDOWN ===
+User Query Tokens: ${tokenUsage.userQueryTokens.toLocaleString()}
+LangLibs Tokens: ${tokenUsage.langLibsTokens.toLocaleString()}
+API Docs Tokens: ${tokenUsage.apiDocsTokens.toLocaleString()}
+Bal.md Tokens: ${tokenUsage.balMdTokens.toLocaleString()}
+Extract Code MD File Tokens: ${tokenUsage.extractCodeTokens.toLocaleString()}
+
+Total Input Tokens: ${tokenUsage.totalInputTokens.toLocaleString()}
+Output Tokens: ${tokenUsage.outputTokens.toLocaleString()}
+
+Total Tokens Used: ${(tokenUsage.totalInputTokens + tokenUsage.outputTokens).toLocaleString()}
+`;
+}
+
 // Main execution
 async function main() {
     try {
@@ -230,8 +313,13 @@ async function main() {
             process.exit(1);
         }
 
-        // Run the code generator
-        const response = await generateBallerinaCode(userQuery, [API_DOC]);
+        console.log("Starting Ballerina code generation with Anthropic's official token counting...");
+
+        // Run the code generator with real token tracking
+        const { response, tokenUsage } = await generateBallerinaCode(userQuery, [API_DOC]);
+
+        // Log token usage to console
+        console.log("\n" + formatTokenUsage(tokenUsage));
 
         // Ensure output directory
         const outputDir = path.join(process.cwd(), "poc");
@@ -244,22 +332,43 @@ async function main() {
         const timestamp = now.toISOString().replace(/[:.]/g, "-");
         const outputPath = path.join(outputDir, `${timestamp}.txt`);
 
-        // Final content with response only
+        // Final content with response and token usage
         const finalContent = `=== USER QUERY ===
 ${userQuery}
 
 === RESPONSE ===
 ${response}
+
+${formatTokenUsage(tokenUsage)}
+
+=== GENERATION METADATA ===
+Generated At: ${now.toISOString()}
+Model Used: ${ANTHROPIC_HAIKU}
+Max Output Tokens: 8192
+Step Count Limit: 25
 `;
 
         // Save everything into one txt file
         fs.writeFileSync(outputPath, finalContent, "utf-8");
         console.log(`\nMain execution output saved to ${outputPath}\n`);
+
+        // Also create a separate JSON file with just the token usage for easy parsing
+        const tokenUsageJsonPath = path.join(outputDir, `${timestamp}_tokens.json`);
+        fs.writeFileSync(tokenUsageJsonPath, JSON.stringify({
+            timestamp: now.toISOString(),
+            userQuery,
+            tokenUsage,
+            model: ANTHROPIC_HAIKU,
+            maxOutputTokens: 8192,
+            stepCountLimit: 25
+        }, null, 2), "utf-8");
+
+        console.log(`Token usage JSON saved to ${tokenUsageJsonPath}\n`);
+
     } catch (error) {
         console.error("Error generating Ballerina code:", error);
+        process.exit(1);
     }
 }
 
 main();
-
-export { generateBallerinaCode };

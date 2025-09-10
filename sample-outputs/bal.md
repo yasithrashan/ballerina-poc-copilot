@@ -1,5 +1,4 @@
-# Order Management Project
-## This is a comprehensive order management system with customer, product, and order handling, integrated with Stripe for payments and invoicing.
+# Codebase High-Level Summary
 
 ## Project Files
 - `main.bal` - Main service implementation with API endpoints and business logic

@@ -8,6 +8,7 @@
 
 ### File: main.bal
 
+```
 resource function get products() returns Product[]|error {
     sql:ParameterizedQuery selectQuery = `
         SELECT product_id, name, description, price, currency, active, stripe_product_id, stripe_price_id, created_at
@@ -24,7 +25,9 @@ resource function get products() returns Product[]|error {
 
     return products;
 }
+```
 
+```
 resource function get orders() returns OrderSummary[]|error {
     sql:ParameterizedQuery summaryQuery = `
         SELECT o.order_id, o.customer_id, c.name as customer_name, o.status,
@@ -60,9 +63,11 @@ resource function get orders() returns OrderSummary[]|error {
 
     return summaries;
 }
+```
 
 ### File: types.bal
 
+```
 public type Product record {|
     int productId?;
     string name;
@@ -85,3 +90,4 @@ public type OrderSummary record {|
     int itemCount;
     time:Utc createdAt;
 |};
+```
